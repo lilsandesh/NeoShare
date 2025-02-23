@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect
 from django.http import JsonResponse, HttpResponse, HttpResponseRedirect
 from django.contrib.auth.models import User
 from django.core.mail import send_mail
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.utils import timezone 
 from datetime import datetime, timedelta
@@ -84,6 +84,9 @@ def SignupPage(request):
 
     return render(request, 'signup.html')
 
+def signup(request):
+    return render(request, 'signup.html')  # Ensure 'signup.html' exists in your templates folder 
+
 def VerifyOTPPage(request):
     if request.method == "POST":
         try:
@@ -130,7 +133,6 @@ def VerifyOTPPage(request):
             return JsonResponse({"status": "error", "error": str(e)}, status=500)
 
     return JsonResponse({"status": "error", "error": "Invalid request method"}, status=400)
-
 
 def password_reset_request(request):
     if request.method == "POST":
@@ -229,6 +231,7 @@ def handle_auth_error(request):
     messages.error(request, "Authentication failed. Please try again.")
     return redirect('login')
 
+@login_required(login_url='login')
 def room_view(request):
     return render(request, "room.html")
 
@@ -274,6 +277,7 @@ async def get_room_from_dht(code):
         return None
 
 @login_required
+@login_required(login_url='login')
 @require_http_methods(["POST"])
 def create_room(request):
     """Create a new room and store it in both database and DHT."""
@@ -319,65 +323,29 @@ def create_room(request):
             "message": str(e)
         }, status=500)
 
-import json
-
 @login_required
+@login_required(login_url='login')
 @require_http_methods(["POST"])
+@csrf_exempt  # Temporarily disable CSRF for debugging (remove this later)
 def join_room(request):
-    """Join an existing room."""
-    try:
-        # Try getting data from JSON if it's sent that way
-        data = json.loads(request.body.decode("utf-8")) if request.content_type == "application/json" else request.POST
-        room_code = data.get("room_code")
+    if request.method == "POST":
+        room_code = request.POST.get("room_code", "").strip()  # Remove spaces
 
         if not room_code:
-            return JsonResponse({"status": "error", "message": "Room code is required"}, status=400)
+            return JsonResponse({"error": "Room code is required"}, status=400)
 
-        user = request.user
-        
-        # Check if room exists in database
-        room = Room.objects.filter(code=room_code).first()
-        if not room:
-            return JsonResponse({"status": "error", "message": "Room not found"}, status=404)
-        
-        # Check if user is already in room
-        if room.users.filter(id=user.id).exists():
-            return JsonResponse({"status": "error", "message": "You are already in this room"}, status=400)
-        
-        # Verify room in DHT
-        dht_room = async_to_sync(get_room_from_dht)(room_code)
-        if not dht_room:
-            logger.warning(f"Room {room_code} not found in DHT")
-        
-        # Add user to room
-        room.users.add(user)
-        
-        # Update user profile
-        user_profile, _ = UserProfile.objects.get_or_create(user=user)
-        user_profile.room_code = room_code
-        user_profile.save()
-        
-        # Store room code in session
-        request.session['room_code'] = room_code
-        
-        return JsonResponse({"status": "success", "message": "Joined room successfully", "redirect_url": "/dashboard/"})
-        
-    except json.JSONDecodeError:
-        return JsonResponse({"status": "error", "message": "Invalid JSON format"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to join room: {e}")
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+        # Debugging log
+        print(f"Received room code: {room_code}")
 
+        # Check if the room exists in the database
+        if not Room.objects.filter(code=room_code).exists():
+            return JsonResponse({"error": "Room not found"}, status=404)
 
-        
-    except Exception as e:
-        logger.error(f"Failed to join room: {e}")
-        return JsonResponse({
-            "status": "error",
-            "message": str(e)
-        }, status=500)
+        return JsonResponse({"message": "Room joined successfully", "room_code": room_code})
 
+    return JsonResponse({"error": "Invalid request method"}, status=405)
 @login_required
+@login_required(login_url='login')
 def room_view(request):
     """Render the room template with user's current room info."""
     try:
@@ -414,7 +382,7 @@ def room_detail(request, room_code):
     except Exception as e:
         logger.error(f"Error in room_detail view: {e}")
         return redirect('room')
-
+@login_required(login_url='login')
 def leave_room(request):
     """Leave the current room."""
     if request.method == "POST":
@@ -451,6 +419,7 @@ def leave_room(request):
             }, status=500)
 
 @login_required
+@login_required(login_url='login')
 def dashboard_view(request):
     # Get current user's profile and room information
     user_profile = UserProfile.objects.get(user=request.user)
@@ -494,13 +463,16 @@ def dashboard_view(request):
     return render(request, 'dashboard.html', context)
 
 @login_required
+@login_required(login_url='login')
 def mark_notification_read(request, notification_id):
     Notification.objects.filter(id=notification_id, user=request.user).update(is_read=True)
     return JsonResponse({'status': 'success'})
 
 @login_required
+@login_required(login_url='login')
 def DashboardPage(request):
     return render(request, 'dashboard.html')
+
 
 # views.py or wherever you handle Google authentication
 def handle_google_login(request, user_info):
@@ -514,3 +486,9 @@ def handle_google_login(request, user_info):
         
         login(request, user)
     return redirect('dashboard')
+
+
+@login_required(login_url='login')
+def LogoutPage(request):
+    logout(request)
+    return redirect('login')

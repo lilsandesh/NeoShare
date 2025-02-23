@@ -16,15 +16,13 @@ class DHTManager:
     _bootstrap_nodes = [
         ("127.0.0.1", 8468),
         ("127.0.0.1", 9000)  # Backup bootstrap node
-    ]
-    
+    ]   
     @classmethod
     async def get_instance(cls):
         if not cls._instance:
             cls._instance = cls()
             await cls._instance.initialize()
         return cls._instance
-    
     async def initialize(self):
         if not self._initialized:
             try:

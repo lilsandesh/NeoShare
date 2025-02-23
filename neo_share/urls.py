@@ -18,10 +18,10 @@ from django.contrib import admin
 from django.urls import path
 from neo import views
 from django.urls import path, include
-from neo.views import password_reset_request, password_reset_confirm
+from neo.views import password_reset_request, password_reset_confirm, LogoutPage
 
 urlpatterns = [
-    path('', views.SignupPage, name='home'),  # Root path for initial landing
+    path('', views.LoginPage, name='home'),  # Changed to LoginPage for root
     path('signup/', views.SignupPage, name='signup'),  #  line for signup form submission
     path('login/', views.LoginPage, name='login'),
     path('verify-otp/', views.VerifyOTPPage, name='verify-otp'), 
@@ -39,4 +39,5 @@ urlpatterns = [
     path('notification/mark-read/<int:notification_id>/', 
          views.mark_notification_read, name='mark_notification_read'),
     path('room/leave/', views.leave_room, name='leave_room'),
+    path('logout/', LogoutPage, name='logout'),
 ]

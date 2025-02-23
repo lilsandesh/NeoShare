@@ -39,6 +39,7 @@ EMAIL_HOST_PASSWORD = 'bgqs gftc wtob pjta'  # Your Gmail app password
 INSTALLED_APPS = [
     'daphne',  # ASGI Server
     'channels',
+    'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -93,7 +94,23 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
     'social_django.middleware.SocialAuthExceptionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+
 ]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8080",  # Adjust this to your frontend URL
+]
+
+# If you're testing locally, you might want to allow all origins during development
+CORS_ALLOW_ALL_ORIGINS = True  # Only use this in development!
+
+# For production, specify allowed origins
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:8080",
+#     "http://127.0.0.1:8080",
+#     # Add your production domain here
+# ]
 
 ROOT_URLCONF = 'neo_share.urls'
 

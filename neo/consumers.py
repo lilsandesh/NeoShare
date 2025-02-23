@@ -152,10 +152,7 @@ class DashboardConsumer(AsyncWebsocketConsumer):
             return UserProfile.objects.get(user=user)
         except UserProfile.DoesNotExist:
             return None
-import json
-import hashlib
-from channels.generic.websocket import AsyncWebsocketConsumer
-
+        
 class FileTransferConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope["user"]
@@ -163,15 +160,26 @@ class FileTransferConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
         
+        # Ensure this channel format is consistent
         self.personal_channel = f"user_{self.user.id}_notifications"
+        
+        print(f"[FileTransferConsumer] User {self.user.id} connected, adding to channel {self.personal_channel}")
+        
         await self.channel_layer.group_add(
             self.personal_channel,
             self.channel_name
         )
         await self.accept()
+        
+        # Send confirmation to client
+        await self.send(text_data=json.dumps({
+            'action': 'connection_established',
+            'user_id': str(self.user.id)
+        }))
 
     async def disconnect(self, close_code):
         if hasattr(self, 'personal_channel'):
+            print(f"[FileTransferConsumer] User {self.user.id} disconnected from channel {self.personal_channel}")
             await self.channel_layer.group_discard(
                 self.personal_channel,
                 self.channel_name
@@ -179,27 +187,40 @@ class FileTransferConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         """Handle incoming WebSocket messages for signaling"""
-        data = json.loads(text_data)
-        action = data.get('action')
-
-        if action == 'webrtc_offer':
-            await self.handle_webrtc_offer(data)
-        elif action == 'webrtc_answer':
-            await self.handle_webrtc_answer(data)
-        elif action == 'webrtc_ice_candidate':
-            await self.handle_webrtc_ice_candidate(data)
+        try:
+            data = json.loads(text_data)
+            action = data.get('action')
+            
+            print(f"[FileTransferConsumer] Received {action} from user {self.user.id}")
+            
+            if action == 'webrtc_offer':
+                await self.handle_webrtc_offer(data)
+            elif action == 'webrtc_answer':
+                await self.handle_webrtc_answer(data)
+            elif action == 'webrtc_ice_candidate':
+                await self.handle_webrtc_ice_candidate(data)
+            elif action == 'file_transfer_request':
+                await self.handle_file_transfer_request(data)
+            else:
+                print(f"[FileTransferConsumer] Unknown action: {action}")
+        except json.JSONDecodeError:
+            print(f"[FileTransferConsumer] Failed to parse JSON: {text_data}")
+        except Exception as e:
+            print(f"[FileTransferConsumer] Error processing message: {str(e)}")
 
     async def handle_webrtc_offer(self, data):
         """Relay WebRTC offer to the receiver"""
         receiver_id = data['receiver_id']
         offer = data['offer']
         
+        print(f"[FileTransferConsumer] Relaying WebRTC offer from {self.user.id} to {receiver_id}")
+        
         await self.channel_layer.group_send(
             f"user_{receiver_id}_notifications",
             {
                 'type': 'webrtc_offer',
                 'message': {
-                    'sender_id': self.user.id,
+                    'sender_id': str(self.user.id),
                     'offer': offer
                 }
             }
@@ -210,12 +231,14 @@ class FileTransferConsumer(AsyncWebsocketConsumer):
         sender_id = data['sender_id']
         answer = data['answer']
 
+        print(f"[FileTransferConsumer] Relaying WebRTC answer from {self.user.id} to {sender_id}")
+
         await self.channel_layer.group_send(
             f"user_{sender_id}_notifications",
             {
                 'type': 'webrtc_answer',
                 'message': {
-                    'receiver_id': self.user.id,
+                    'receiver_id': str(self.user.id),
                     'answer': answer
                 }
             }
@@ -226,34 +249,72 @@ class FileTransferConsumer(AsyncWebsocketConsumer):
         target_id = data['target_id']
         candidate = data['candidate']
 
+        print(f"[FileTransferConsumer] Relaying ICE candidate from {self.user.id} to {target_id}")
+
         await self.channel_layer.group_send(
             f"user_{target_id}_notifications",
             {
                 'type': 'webrtc_ice_candidate',
                 'message': {
-                    'sender_id': self.user.id,
+                    'sender_id': str(self.user.id),
                     'candidate': candidate
+                }
+            }
+        )
+
+    async def handle_file_transfer_request(self, data):
+        """Handle file transfer request"""
+        receiver_id = data.get('receiver_id')
+        file_name = data.get('file_name')
+        file_size = data.get('file_size')
+        
+        print(f"[FileTransferConsumer] File transfer request from {self.user.id} to {receiver_id}: {file_name} ({file_size} bytes)")
+        
+        await self.channel_layer.group_send(
+            f"user_{receiver_id}_notifications",
+            {
+                'type': 'file_transfer_request',
+                'message': {
+                    'sender_id': str(self.user.id),
+                    'file_name': file_name,
+                    'file_size': file_size
                 }
             }
         )
 
     async def webrtc_offer(self, event):
         """Send WebRTC offer to receiver"""
+        print(f"[FileTransferConsumer] Sending WebRTC offer to {self.user.id}: {event['message']}")
         await self.send(text_data=json.dumps({
-            'type': 'webrtc_offer',
-            'data': event['message']
+            'action': 'webrtc_offer',  # Use 'action' instead of 'type'
+            'sender_id': event['message']['sender_id'],
+            'offer': event['message']['offer']
         }))
 
     async def webrtc_answer(self, event):
         """Send WebRTC answer to sender"""
+        print(f"[FileTransferConsumer] Sending WebRTC answer to {self.user.id}: {event['message']}")
         await self.send(text_data=json.dumps({
-            'type': 'webrtc_answer',
-            'data': event['message']
+            'action': 'webrtc_answer',  # Use 'action' instead of 'type'
+            'receiver_id': event['message']['receiver_id'],
+            'answer': event['message']['answer']
         }))
 
     async def webrtc_ice_candidate(self, event):
         """Send ICE candidate to the target peer"""
+        print(f"[FileTransferConsumer] Sending ICE candidate to {self.user.id}: {event['message']}")
         await self.send(text_data=json.dumps({
-            'type': 'webrtc_ice_candidate',
-            'data': event['message']
+            'action': 'webrtc_ice_candidate',  # Use 'action' instead of 'type'
+            'sender_id': event['message']['sender_id'],
+            'candidate': event['message']['candidate']
+        }))
+
+    async def file_transfer_request(self, event):
+        """Send file transfer request to receiver"""
+        print(f"[FileTransferConsumer] Sending file transfer request to {self.user.id}: {event['message']}")
+        await self.send(text_data=json.dumps({
+            'action': 'file_transfer_request',  # Use 'action' instead of 'type'
+            'sender_id': event['message']['sender_id'],
+            'file_name': event['message']['file_name'],
+            'file_size': event['message']['file_size']
         }))

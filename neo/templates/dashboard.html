@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard | Neo Share</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <style>
         body {
@@ -99,65 +100,162 @@
             border: 1px solid #eee;
             border-radius: 4px;
         }
+        .notification-item {
+            transition: all 0.3s ease;
+            border-left: 4px solid #0d6efd;
+        }
+
+        .notification-item:hover {
+            transform: translateX(5px);
+        }
+
+        .notification-item .card-body {
+            padding: 1rem;
+        }
+
+        .progress {
+            height: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .alert {
+            margin-bottom: 0.5rem;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <img src="{% static 'images/logo.png' %}" alt="Logo">
-        <h1 class="display-5 fw-bold">NeoShare</h1>
-        <button id="logout-btn" class="btn btn-danger position-absolute top-50 end-0 translate-middle-y me-3">Logout</button>
-    </div>
-
-    <div class="content">
-        <div class="sidebar">
-            <h3 class="h5 mb-3 border-bottom pb-2">Statistics</h3>
-            <div id="active-users-list" class="card bg-info text-white p-2">
-                <div class="card-body d-flex align-items-center">
-                    <i class="fas fa-users me-3"></i>
-                    <span>Active: <span id="active-users-count">0</span></span>
+        <div class="header">
+            <img src="{% static 'images/logo.png' %}" alt="Logo">
+            <h1 class="display-5 fw-bold">NeoShare</h1>
+            <button id="logout-btn" class="btn btn-danger position-absolute top-50 end-0 translate-middle-y me-3">Logout</button>
+        </div>
+        <div class="content">
+            <div class="sidebar">
+                <h3 class="h5 mb-3 border-bottom pb-2">Statistics</h3>
+                <div id="active-users-list" class="card bg-info text-white p-2">
+                    <div class="card-body d-flex align-items-center">
+                        <i class="fas fa-users me-3"></i>
+                        <span>Active: <span id="active-users-count">0</span></span>
+                    </div>
+                </div>
+                
+                <ul id="users-list" class="mt-3 list-group">
+                    <!-- Users will be dynamically added here -->
+                </ul>
+            </div>
+    
+            <div class="main-content">
+                <div class="container">
+                    <div id="user-cards-container" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+                        <!-- User cards will be dynamically added here -->
+                    </div>
                 </div>
             </div>
-            
-            <ul id="users-list" class="mt-3 list-group"></ul>
+    
+            <div class="notifications-panel">
+                <h3 class="h5 mb-3 border-bottom pb-2">Notifications</h3>
+                <div id="notifications-container"></div>
+            </div>
         </div>
-
-        <div class="main-content">
-            <div class="container">
-                <div id="user-cards-container" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    
+        <!-- File Transfer Dialog -->
+        <div id="file-transfer-dialog" class="file-transfer-dialog" style="display: none;">
+            <div class="dialog-content bg-white rounded-3 shadow">
+                <div class="dialog-header border-bottom p-3">
+                    <h5 class="m-0">Send File</h5>
+                </div>
+                <div class="dialog-body p-3">
+                    <p class="text-muted mb-3">Select files to send to the recipient</p>
+                    <div class="mb-3">
+                        <input type="file" id="file-input" class="form-control">
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button id="close-dialog-btn" class="btn btn-light">
+                            <i class="fas fa-times me-1"></i>Cancel
+                        </button>
+                        <button id="send-file-btn" class="btn btn-primary">
+                            <i class="fas fa-paper-plane me-1"></i>Send
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
-
-        <div class="notifications-panel">
-            <h3 class="h5 mb-3 border-bottom pb-2">Notifications</h3>
-            <div id="notifications-container"></div>
-        </div>
-    </div>
+    
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        document.getElementById("logout-btn").addEventListener("click", function () {
+                // Clear session storage (or local storage if used for authentication)
+                sessionStorage.clear();
+                localStorage.clear();
+
+                // Optionally, send a logout request to the server (if using authentication backend)
+                fetch('/logout/', { 
+                    method: 'POST', 
+                    credentials: 'include', // Ensures cookies/session data are sent
+                    headers: {
+                        'X-CSRFToken': getCSRFToken() // Include CSRF token if using Django
+                    }
+                }).then(response => {
+                    if (response.ok) {
+                        // Redirect to login page after successful logout
+                        window.location.href = "/login/";
+                    } else {
+                        alert("Logout failed. Please try again.");
+                    }
+                }).catch(error => console.error("Logout error:", error));
+            });
+
+        // Function to get CSRF token (for Django-based apps)
+        function getCSRFToken() {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                document.cookie.split(';').forEach(cookie => {
+                    let trimmedCookie = cookie.trim();
+                    if (trimmedCookie.startsWith("csrftoken=")) {
+                        cookieValue = trimmedCookie.substring(10);
+                    }
+                });
+            }
+            return cookieValue;
+        }
         // WebSocket connection for dashboard updates
         const dashboardSocket = new WebSocket("ws://localhost:8000/ws/dashboard/");
-    
+
         dashboardSocket.onopen = function(e) {
             console.log("Dashboard WebSocket connection established");
         };
-    
+
         dashboardSocket.onerror = function(error) {
             console.error("Dashboard WebSocket error:", error);
         };
-    
+
         dashboardSocket.onclose = function(event) {
             console.log("Dashboard WebSocket connection closed:", event);
         };
-    
+
         dashboardSocket.onmessage = function(event) {
             console.log("Received dashboard message:", event.data);
             
             try {
                 const data = JSON.parse(event.data);
                 console.log("Parsed dashboard data:", data);
-    
+
                 if (data.type === "users_update") {
                     console.log("Updating users with:", data.users);
                     updateUserCards(data.users);
@@ -167,12 +265,36 @@
                 console.error("Error processing dashboard message:", error);
             }
         };
-    
+
+        // Add the missing function here
+        function showFileTransferDialog(userId) {
+            console.log("Showing file transfer dialog for user:", userId);
+            
+            // Get the file transfer dialog
+            const fileTransferDialog = document.getElementById('file-transfer-dialog');
+            if (!fileTransferDialog) {
+                console.error("File transfer dialog not found in DOM");
+                return;
+            }
+            
+            // Set the target user ID as a data attribute
+            fileTransferDialog.dataset.targetUserId = userId;
+            
+            // Display the dialog
+            fileTransferDialog.style.display = 'block';
+            
+            // Reset file input
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) {
+                fileInput.value = '';
+            }
+        }
+
         function updateUserCards(users) {
             console.log("Updating user cards with:", users);
             let container = document.getElementById("user-cards-container");
             if (!container) return;
-    
+
             container.innerHTML = "";
             users.forEach(user => {
                 let displayName = user.username;
@@ -181,7 +303,7 @@
                 let card = document.createElement("div");
                 card.className = "col";
                 card.dataset.userId = user.id;
-    
+
                 card.innerHTML = `
                     <div class="card user-card text-center p-3" data-user-id="${user.id}">
                         <div class="card-body">
@@ -196,7 +318,7 @@
                 card.querySelector('.send-file-btn').addEventListener('click', () => showFileTransferDialog(user.id));
             });
         }
-    
+
         function updateActiveUsers(users) {
             const activeUsersCount = document.getElementById("active-users-count");
             if (activeUsersCount) {
@@ -215,85 +337,928 @@
                 `).join('');
             }
         }
-    
-        // WebRTC Implementation
+
+        // First, consolidate the notifications container creation
+        function ensureNotificationsContainer() {
+            let container = document.getElementById('notifications-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notifications-container';
+                container.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 9999;
+                    max-width: 400px;
+                    width: 100%;
+                    pointer-events: auto;
+                `;
+                document.body.appendChild(container);
+            }
+            return container;
+        }
+
+        // First, define the ICE configuration
+        const iceConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ]
+        };
+
+        // Define the WebRTCFileTransfer class
         class WebRTCFileTransfer {
             constructor() {
                 this.peers = new Map();
-            }
-    
-            async createConnection(userId) {
-                const peerConnection = new RTCPeerConnection();
-                const dataChannel = peerConnection.createDataChannel("file-transfer");
-                this.peers.set(userId, { peerConnection, dataChannel });
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                this.socket = new WebSocket(`${protocol}//${window.location.host}/ws/signaling/`);
                 
-                dataChannel.onopen = () => console.log("Data channel open for user", userId);
-                dataChannel.onmessage = this.receiveFile.bind(this);
+                // Add connection ID logging
+                this.socket.onopen = (event) => {
+                    console.log('[WebRTCFileTransfer] WebSocket connection established!', {
+                        url: this.socket.url,
+                        protocol: this.socket.protocol,
+                        state: this.socket.readyState
+                    });
+                }
+
+                this.socket.onmessage = (event) => {
+                    console.log('[WebRTCFileTransfer] Raw WebSocket message received:', {
+                        timestamp: new Date().toISOString(),
+                        data: event.data,
+                        dataType: typeof event.data,
+                        dataLength: event.data.length
+                    });
+                    
+                    try {
+                        const parsed = JSON.parse(event.data);
+                        console.log('[WebRTCFileTransfer] Parsed message:', parsed);
+                        this.handleSignalMessage(event);
+                    } catch (error) {
+                        console.error('[WebRTCFileTransfer] Error parsing message:', error);
+                    }
+                };
+
+                this.socket.onerror = (error) => {
+                    console.error('[WebRTCFileTransfer] WebSocket error:', {
+                        timestamp: new Date().toISOString(),
+                        error: error
+                    });
+                };
+
+                this.socket.onclose = (event) => {
+                    console.log('[WebRTCFileTransfer] WebSocket closed:', {
+                        timestamp: new Date().toISOString(),
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean
+                    });
+                };
             }
-    
-            sendFile(userId, file) {
-                const peer = this.peers.get(userId);
-                if (!peer) {
-                    console.error("No WebRTC connection for user", userId);
+
+            checkConnectionState() {
+                const states = {
+                    0: 'CONNECTING',
+                    1: 'OPEN',
+                    2: 'CLOSING',
+                    3: 'CLOSED'
+                };
+                
+                console.log('[WebRTCFileTransfer] WebSocket state:', {
+                    readyState: states[this.socket.readyState],
+                    bufferedAmount: this.socket.bufferedAmount,
+                    protocol: this.socket.protocol,
+                    url: this.socket.url
+                });
+                
+                return this.socket.readyState === 1; // returns true if connection is OPEN
+            }
+
+            // Update the handleSignalMessage method
+            async handleSignalMessage(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[WebRTCFileTransfer] Received signal message:', data);
+
+                    // Specifically handle file transfer requests
+                    if (data.action === 'file_transfer_request') {
+                        console.log('[WebRTCFileTransfer] Processing file transfer request:', data);
+                        
+                        const container = ensureNotificationsContainer();
+                        
+                        // Create notification element
+                        const notification = document.createElement('div');
+                        notification.className = 'alert alert-info alert-dismissible fade show';
+                        notification.innerHTML = `
+                            <strong>File Transfer Request</strong>
+                            <p>User ${data.sender_id} wants to send you: ${data.file_name} (${formatFileSize(data.file_size)})</p>
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-success accept-transfer">Accept</button>
+                                <button type="button" class="btn btn-sm btn-danger reject-transfer ms-2">Reject</button>
+                            </div>
+                        `;
+
+                        // Add event listeners
+                        const acceptBtn = notification.querySelector('.accept-transfer');
+                        const rejectBtn = notification.querySelector('.reject-transfer');
+
+                        acceptBtn.addEventListener('click', () => {
+                            console.log('[WebRTCFileTransfer] Accepting transfer from:', data.sender_id);
+                            this.acceptFileTransfer(data.sender_id);
+                            notification.remove();
+                        });
+
+                        rejectBtn.addEventListener('click', () => {
+                            console.log('[WebRTCFileTransfer] Rejecting transfer from:', data.sender_id);
+                            this.rejectFileTransfer(data.sender_id);
+                            notification.remove();
+                        });
+
+                        container.appendChild(notification);
+                    } else {
+                        // Handle other WebRTC signaling messages
+                        switch(data.action) {
+                            case 'webrtc_offer':
+                                await this.handleOffer(data);
+                                break;
+                            case 'webrtc_answer':
+                                await this.handleAnswer(data);
+                                break;
+                            case 'webrtc_ice_candidate':
+                                await this.handleICECandidate(data);
+                                break;
+                        }
+                    }
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error handling signal message:', error);
+                }
+            }
+
+            handleFileTransferRequest(data) {
+                console.log('[WebRTCFileTransfer] Creating file transfer request notification:', data);
+                
+                // Always create a new container if it doesn't exist
+                const container = this.ensureNotificationsContainer();
+                
+                // Create notification element with improved styling
+                const notification = document.createElement('div');
+                notification.className = 'alert alert-info alert-dismissible fade show';
+                notification.style.cssText = 'margin-bottom: 10px; background-color: #fff; border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1);';
+                notification.innerHTML = `
+                    <strong>File Transfer Request</strong>
+                    <p>User ${data.sender_id} wants to send you: ${data.file_name} (${this.formatFileSize(data.file_size)})</p>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-success accept-transfer">Accept</button>
+                        <button type="button" class="btn btn-sm btn-danger reject-transfer ms-2">Reject</button>
+                    </div>
+                `;
+
+                // Add event listeners
+                const acceptBtn = notification.querySelector('.accept-transfer');
+                const rejectBtn = notification.querySelector('.reject-transfer');
+
+                acceptBtn.addEventListener('click', () => {
+                    console.log('[WebRTCFileTransfer] Accept clicked for sender:', data.sender_id);
+                    this.acceptFileTransfer(data.sender_id);
+                    notification.remove();
+                });
+
+                rejectBtn.addEventListener('click', () => {
+                    console.log('[WebRTCFileTransfer] Reject clicked for sender:', data.sender_id);
+                    this.rejectFileTransfer(data.sender_id);
+                    notification.remove();
+                });
+
+                // Add to container
+                container.appendChild(notification);
+                console.log('[WebRTCFileTransfer] Notification added to container');
+            }
+
+            // Improved setupDataChannelHandlers for better debugging
+            setupDataChannelHandlers(dataChannel, peerId) {
+                dataChannel.binaryType = 'arraybuffer'; // Ensure binary type is set correctly
+                
+                dataChannel.onopen = () => {
+                    console.log(`[WebRTCFileTransfer] Data channel with peer ${peerId} is open and ready to use`);
+                    // If we have a pending file and this is the channel to the right recipient, send the file
+                    if (this.pendingFile && this.pendingFileReceiver === peerId) {
+                        console.log(`[WebRTCFileTransfer] Sending pending file to ${peerId}`);
+                        this.sendFile(dataChannel, this.pendingFile);
+                    }
+                };
+                
+                dataChannel.onclose = () => {
+                    console.log(`[WebRTCFileTransfer] Data channel with peer ${peerId} has closed`);
+                };
+                
+                dataChannel.onerror = (error) => {
+                    console.error(`[WebRTCFileTransfer] Error in data channel with peer ${peerId}:`, error);
+                };
+                
+                dataChannel.onmessage = (event) => {
+                    try {
+                        if (typeof event.data === 'string') {
+                            console.log(`[WebRTCFileTransfer] Received message on data channel from ${peerId}:`, 
+                                event.data.length > 100 ? event.data.substring(0, 100) + '...' : event.data);
+                            const message = JSON.parse(event.data);
+                            if (message.type === 'file_chunk') {
+                                this.handleFileChunk(message, peerId);
+                            } else if (message.type === 'file_transfer_complete') {
+                                this.completeFileTransfer(message, peerId);
+                            }
+                        } else {
+                            console.log(`[WebRTCFileTransfer] Received binary data from ${peerId}, size: ${event.data.byteLength} bytes`);
+                        }
+                    } catch (error) {
+                        console.error('[WebRTCFileTransfer] Error processing message:', error, 'Raw data:', event.data);
+                    }
+                };
+            }
+
+            
+            // Create a visual notification for file transfer
+            showFileTransferNotification(sender_id, file_name, file_size) {
+                const notificationsContainer = document.getElementById('notifications-container');
+                if (!notificationsContainer) {
+                    console.error('[WebRTCFileTransfer] Notifications container not found');
                     return;
                 }
-                const reader = new FileReader();
-                reader.onload = () => {
-                    peer.dataChannel.send(reader.result);
-                    console.log("File sent to user", userId);
-                };
-                reader.readAsArrayBuffer(file);
-            }
-    
-            receiveFile(event) {
-                const receivedFile = new Blob([event.data]);
-                const downloadLink = document.createElement("a");
-                downloadLink.href = URL.createObjectURL(receivedFile);
-                downloadLink.download = "received_file";
-                downloadLink.textContent = "Download Received File";
-                document.body.appendChild(downloadLink);
-            }
-        }
-    
-        const webRTCTransfer = new WebRTCFileTransfer();
-    
-        function showFileTransferDialog(userId) {
-            const existingDialog = document.querySelector('.file-transfer-dialog');
-            if (existingDialog) existingDialog.remove();
-            
-            const dialog = document.createElement('div');
-            dialog.className = 'file-transfer-dialog';
-            dialog.innerHTML = `
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Send File</h5>
-                        <button type="button" class="btn-close" aria-label="Close"></button>
+                
+                const notification = document.createElement('div');
+                notification.className = 'alert alert-info alert-dismissible fade show';
+                notification.innerHTML = `
+                    <strong>File Transfer Request</strong>
+                    <p>User ${sender_id} wants to send you: ${file_name} (${this.formatFileSize(file_size)})</p>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-success accept-transfer" data-sender="${sender_id}">Accept</button>
+                        <button type="button" class="btn btn-sm btn-danger reject-transfer ms-2" data-sender="${sender_id}">Reject</button>
                     </div>
-                    <div class="card-body">
-                        <input type="file" class="form-control mb-3" id="file-input">
-                        <button class="btn btn-primary" id="send-file-btn">Send</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(dialog);
-            dialog.querySelector('.btn-close').addEventListener('click', () => dialog.remove());
-            dialog.querySelector('#send-file-btn').addEventListener('click', () => {
-                const file = dialog.querySelector('#file-input').files[0];
-                if (file) {
-                    webRTCTransfer.sendFile(userId, file);
-                    dialog.remove();
-                } else {
-                    alert('Please select a file first');
-                }
-            });
-        }
-        const iceConfig = {
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-        };
-        
-        let peerConnections = {};
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                
+                notificationsContainer.appendChild(notification);
+                
+                // Add event listeners to the buttons
+                notification.querySelector('.accept-transfer').addEventListener('click', () => {
+                    this.acceptFileTransfer(sender_id);
+                    notification.remove();
+                });
+                
+                notification.querySelector('.reject-transfer').addEventListener('click', () => {
+                    this.rejectFileTransfer(sender_id);
+                    notification.remove();
+                });
+            }
 
-    </script>
-    
+            // Update the handleFileChunk method to properly reassemble files
+            handleFileChunk(message, senderId) {
+                try {
+                    const { fileName, fileSize, offset, chunk } = message;
+                    console.log(`[WebRTCFileTransfer] Received file chunk from ${senderId}, offset: ${offset}, chunk size: ${chunk.length}`);
+                    
+                    // Convert base64 chunk back to ArrayBuffer
+                    const binaryChunk = this.base64ToArrayBuffer(chunk);
+                    
+                    // Initialize file tracking if this is the first chunk
+                    if (!this.receivingFiles.has(fileName)) {
+                        console.log(`[WebRTCFileTransfer] Starting to receive file: ${fileName}, size: ${fileSize}`);
+                        
+                        this.receivingFiles.set(fileName, {
+                            data: new Uint8Array(fileSize),
+                            receivedBytes: 0,
+                            size: fileSize,
+                            startTime: Date.now(),
+                            progressElement: this.createProgressElement(fileName, fileSize)
+                        });
+                    }
+                    
+                    const fileInfo = this.receivingFiles.get(fileName);
+                    
+                    // Copy chunk data into the file's buffer at the correct offset
+                    const view = new Uint8Array(binaryChunk);
+                    fileInfo.data.set(view, offset);
+                    fileInfo.receivedBytes += view.length;
+                    
+                    // Update progress UI
+                    this.updateProgressElement(fileInfo.progressElement, fileInfo.receivedBytes, fileInfo.size);
+                    
+                    console.log(`[WebRTCFileTransfer] Progress for ${fileName}: ${Math.round(fileInfo.receivedBytes * 100 / fileInfo.size)}%`);
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error handling file chunk:', error);
+                }
+            }
+
+            // Add this method to ensure the notifications container exists
+            ensureNotificationsContainer() {
+                let container = document.getElementById('notifications-container');
+                if (!container) {
+                    console.log('[WebRTCFileTransfer] Creating new notifications container');
+                    container = document.createElement('div');
+                    container.id = 'notifications-container';
+                    container.style.cssText = `
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        z-index: 9999;
+                        max-width: 400px;
+                        width: 100%;
+                        pointer-events: auto;
+                    `;
+                    document.body.appendChild(container);
+                }
+                return container;
+            }
+
+            // Helper method to format file size
+            formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' bytes';
+                else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+                else return (bytes / 1048576).toFixed(1) + ' MB';
+            }
+        
+
+            // Update the handleSignalMessage method in the WebRTCFileTransfer class
+            handleSignalMessage(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[WebRTCFileTransfer] Received signal message:', data);
+
+                    if (data.action === 'file_transfer_request') {
+                        console.log('[WebRTCFileTransfer] Processing file transfer request:', data);
+                        
+                        // Ensure we have all required data
+                        if (!data.sender_id || !data.file_name || !data.file_size) {
+                            console.error('[WebRTCFileTransfer] Missing required data in transfer request:', data);
+                            return;
+                        }
+
+                        // Create notification container if it doesn't exist
+                        const container = ensureNotificationsContainer();
+
+                        // Create the notification element
+                        const notification = document.createElement('div');
+                        notification.className = 'alert alert-info alert-dismissible fade show';
+                        notification.innerHTML = `
+                            <strong>File Transfer Request</strong>
+                            <p>User ${data.sender_id} wants to send you: ${data.file_name} (${this.formatFileSize(data.file_size)})</p>
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-success accept-transfer">Accept</button>
+                                <button type="button" class="btn btn-sm btn-danger reject-transfer ms-2">Reject</button>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        `;
+
+                        // Add event listeners
+                        notification.querySelector('.accept-transfer').addEventListener('click', () => {
+                            console.log('[WebRTCFileTransfer] Transfer accepted from:', data.sender_id);
+                            this.acceptFileTransfer(data.sender_id);
+                            notification.remove();
+                        });
+
+                        notification.querySelector('.reject-transfer').addEventListener('click', () => {
+                            console.log('[WebRTCFileTransfer] Transfer rejected from:', data.sender_id);
+                            this.rejectFileTransfer(data.sender_id);
+                            notification.remove();
+                        });
+
+                        // Add notification to container
+                        container.appendChild(notification);
+                        
+                    } else {
+                        // Handle other WebRTC signaling messages...
+                        switch (data.action) {
+                            case 'webrtc_offer':
+                                this.handleOffer(data);
+                                break;
+                            case 'webrtc_answer':
+                                this.handleAnswer(data);
+                                break;
+                            case 'webrtc_ice_candidate':
+                                this.handleICECandidate(data);
+                                break;
+                        }
+                    }
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error handling signal message:', error);
+                }
+            }
+
+
+            // Helper function to convert Base64 to ArrayBuffer
+            base64ToArrayBuffer(base64) {
+                const binaryString = window.atob(base64);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes.buffer;
+            }
+
+            // Complete file transfer (recipient side)
+            completeFileTransfer(message, senderId) {
+                try {
+                    const { fileName, fileSize } = message;
+                    console.log(`[WebRTCFileTransfer] File transfer completed from ${senderId}: ${fileName}`);
+                    
+                    if (!this.receivingFiles.has(fileName)) {
+                        console.error(`[WebRTCFileTransfer] Received completion message for unknown file: ${fileName}`);
+                        return;
+                    }
+                    
+                    const fileInfo = this.receivingFiles.get(fileName);
+                    
+                    // Ensure we received all bytes
+                    if (fileInfo.receivedBytes !== fileInfo.size) {
+                        console.warn(`[WebRTCFileTransfer] File ${fileName} marked complete but received ${fileInfo.receivedBytes}/${fileInfo.size} bytes`);
+                    }
+                    
+                    // Create a blob from the received data
+                    const blob = new Blob([fileInfo.data.buffer], { type: this.getFileType(fileName) });
+                    
+                    // Create download link
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = URL.createObjectURL(blob);
+                    downloadLink.download = fileName;
+                    downloadLink.textContent = `Download ${fileName}`;
+                    downloadLink.className = 'btn btn-primary mt-2';
+                    
+                    // Update progress element to success state
+                    fileInfo.progressElement.classList.remove('alert-info');
+                    fileInfo.progressElement.classList.add('alert-success');
+                    const elapsed = ((Date.now() - fileInfo.startTime) / 1000).toFixed(1);
+                    fileInfo.progressElement.querySelector('p').textContent = 
+                        `Received ${fileName} (${this.formatFileSize(fileSize)}) in ${elapsed} seconds`;
+                    fileInfo.progressElement.appendChild(downloadLink);
+                    
+                    // Clean up after 1 minute to save memory
+                    setTimeout(() => {
+                        URL.revokeObjectURL(downloadLink.href);
+                        this.receivingFiles.delete(fileName);
+                    }, 60000);
+                    
+                    // Show notification
+                    this.showNotification(`File ${fileName} has been received successfully.`, 'success');
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error completing file transfer:', error);
+                }
+            }
+
+            // Helper to create progress element for receiving files
+            createProgressElement(fileName, fileSize) {
+                const progressContainer = document.createElement('div');
+                progressContainer.className = 'transfer-progress alert alert-info';
+                progressContainer.innerHTML = `
+                    <p>Receiving ${fileName} (${this.formatFileSize(fileSize)})</p>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                            role="progressbar" style="width: 0%;" 
+                            aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
+                `;
+                document.getElementById('notifications-container').appendChild(progressContainer);
+                return progressContainer;
+            }
+
+            // Helper to update progress element
+            updateProgressElement(element, receivedBytes, totalBytes) {
+                const progress = Math.min(100, Math.round(receivedBytes * 100 / totalBytes));
+                const progressBar = element.querySelector('.progress-bar');
+                progressBar.style.width = progress + '%';
+                progressBar.setAttribute('aria-valuenow', progress);
+                progressBar.textContent = progress + '%';
+            }
+
+            // Helper to determine file type based on extension
+            getFileType(fileName) {
+                const extension = fileName.split('.').pop().toLowerCase();
+                const mimeTypes = {
+                    'txt': 'text/plain',
+                    'pdf': 'application/pdf',
+                    'doc': 'application/msword',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'xls': 'application/vnd.ms-excel',
+                    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'ppt': 'application/vnd.ms-powerpoint',
+                    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif'
+                };
+                
+                return mimeTypes[extension] || 'application/octet-stream';
+            }
+            
+            // Accept file transfer
+            acceptFileTransfer(sender_id) {
+                console.log(`[WebRTCFileTransfer] Accepting file transfer from ${sender_id}`);
+                this.socket.send(JSON.stringify({
+                    action: 'file_transfer_response',
+                    receiver_id: sender_id,
+                    accepted: true
+                }));
+                
+                // If we don't have a connection to this peer yet, create one
+                if (!this.peers.has(sender_id)) {
+                    console.log(`[WebRTCFileTransfer] Creating new connection for accepted file transfer with ${sender_id}`);
+                    this.createConnection(sender_id);
+                }
+            }
+            
+            // Reject file transfer
+            rejectFileTransfer(sender_id) {
+                console.log(`[WebRTCFileTransfer] Rejecting file transfer from ${sender_id}`);
+                this.socket.send(JSON.stringify({
+                    action: 'file_transfer_response',
+                    receiver_id: sender_id,
+                    accepted: false
+                }));
+            }
+
+            // Helper method to format file size
+            formatFileSize(bytes) {
+                if (!bytes || isNaN(bytes)) return '0 bytes';
+                
+                if (bytes < 1024) return bytes + ' bytes';
+                else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+                else return (bytes / 1048576).toFixed(1) + ' MB';
+            }
+
+            async handleOffer(data) {
+                try {
+                    const sender_id = data.sender_id;
+                    const offer = data.offer;
+                    
+                    console.log(`[WebRTCFileTransfer] Handling WebRTC offer from ${sender_id}`);
+                    
+                    const peerConnection = new RTCPeerConnection(iceConfig);
+                    
+                    // Setup ICE candidate handling
+                    peerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            console.log(`[WebRTCFileTransfer] Sending ICE candidate to ${sender_id}`);
+                            this.socket.send(JSON.stringify({
+                                action: 'webrtc_ice_candidate',
+                                target_id: sender_id,
+                                candidate: event.candidate
+                            }));
+                        }
+                    };
+                    
+                    // Handle incoming data channels
+                    peerConnection.ondatachannel = (event) => {
+                        console.log(`[WebRTCFileTransfer] Data channel received from ${sender_id}`);
+                        const dataChannel = event.channel;
+                        this.setupDataChannelHandlers(dataChannel, sender_id);
+                        this.peers.set(sender_id, { peerConnection, dataChannel });
+                    };
+                    
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+
+                    console.log(`[WebRTCFileTransfer] Sending WebRTC answer to ${sender_id}`);
+                    this.socket.send(JSON.stringify({
+                        action: "webrtc_answer",
+                        sender_id: sender_id,
+                        answer: answer
+                    }));
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error handling offer:', error);
+                }
+            }
+
+            async handleAnswer(data) {
+                try {
+                    const receiver_id = data.receiver_id;
+                    const answer = data.answer;
+                    
+                    console.log(`[WebRTCFileTransfer] Handling WebRTC answer from ${receiver_id}`);
+                    
+                    const peer = this.peers.get(receiver_id);
+                    if (peer) {
+                        await peer.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                        console.log(`[WebRTCFileTransfer] Set remote description for ${receiver_id}`);
+                    } else {
+                        console.warn(`[WebRTCFileTransfer] No peer found for ${receiver_id}`);
+                    }
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error handling answer:', error);
+                }
+            }
+
+            // Fix for inconsistent sender/target ID handling in handleICECandidate
+            async handleICECandidate(data) {
+                try {
+                    // Normalize the ID field - handle both sender_id and target_id formats
+                    const peerId = data.sender_id || data.target_id;
+                    if (!peerId) {
+                        console.error('[WebRTCFileTransfer] Missing peer ID in ICE candidate data', data);
+                        return;
+                    }
+                    
+                    const candidate = data.candidate;
+                    
+                    console.log(`[WebRTCFileTransfer] Handling ICE candidate from ${peerId}`);
+                    
+                    const peer = this.peers.get(peerId);
+                    if (peer && candidate) {
+                        await peer.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                        console.log(`[WebRTCFileTransfer] Added ICE candidate for ${peerId}`);
+                    } else {
+                        console.warn(`[WebRTCFileTransfer] No peer found for ${peerId} or invalid candidate`, peer, candidate);
+                    }
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error handling ICE candidate:', error);
+                }
+            }
+
+            // Fix for event handling in createConnection to properly track connection state
+            async createConnection(receiver_id) {
+                try {
+                    console.log(`[WebRTCFileTransfer] Creating WebRTC connection to ${receiver_id}`);
+                    
+                    const peerConnection = new RTCPeerConnection(iceConfig);
+                    const dataChannel = peerConnection.createDataChannel("file-transfer");
+                    
+                    // Setup data channel handlers
+                    this.setupDataChannelHandlers(dataChannel, receiver_id);
+                    
+                    this.peers.set(receiver_id, { peerConnection, dataChannel });
+
+                    // Enhanced ICE connection state monitoring
+                    peerConnection.oniceconnectionstatechange = (event) => {
+                        console.log(`[WebRTCFileTransfer] ICE connection state with ${receiver_id} changed to: ${peerConnection.iceConnectionState}`);
+                        
+                        if (peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
+                            console.warn(`[WebRTCFileTransfer] ICE connection with ${receiver_id} failed or disconnected. Attempting restart...`);
+                            peerConnection.restartIce();
+                        }
+                    };
+
+                    peerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            console.log(`[WebRTCFileTransfer] Sending ICE candidate to ${receiver_id}`, event.candidate);
+                            this.socket.send(JSON.stringify({
+                                action: 'webrtc_ice_candidate',
+                                target_id: receiver_id,
+                                candidate: event.candidate
+                            }));
+                        } else {
+                            console.log(`[WebRTCFileTransfer] All ICE candidates gathered for connection to ${receiver_id}`);
+                        }
+                    };
+
+                    // Create WebRTC offer
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+
+                    console.log(`[WebRTCFileTransfer] Sending WebRTC offer to ${receiver_id}`, offer);
+                    this.socket.send(JSON.stringify({
+                        action: "webrtc_offer",
+                        receiver_id: receiver_id,
+                        offer: offer
+                    }));
+
+                } catch (error) {
+                    console.error('[WebRTCFileTransfer] Error creating connection:', error);
+                    throw error; // Re-throw to allow caller to handle
+                }
+            }
+
+            
+            // Methods for sending files
+            sendFile(dataChannel, file) {
+                // In your send file button click handler:
+                if (files.length > 0) {
+                    const file = files[0];
+                    console.log("[WebRTCFileTransfer] Initiating file transfer to user:", targetUserId, "File:", file.name);
+
+                    try {
+                        // Check connection state before sending
+                        if (!fileTransfer.checkConnectionState()) {
+                            throw new Error('WebSocket connection is not open');
+                        }
+
+                        // Send with more detailed message structure
+                        const requestMessage = {
+                            action: 'file_transfer_request',
+                            receiver_id: targetUserId,
+                            sender_id: 'current_user_id', // Make sure this is set to the actual current user's ID
+                            file_name: file.name,
+                            file_size: file.size,
+                            timestamp: new Date().toISOString()
+                        };
+
+                        console.log('[WebRTCFileTransfer] Sending file transfer request:', requestMessage);
+                        fileTransfer.socket.send(JSON.stringify(requestMessage));
+
+                        // File transfer setup
+                        const fileReader = new FileReader();
+                        const chunkSize = 16384; // 16 KB chunks
+                        let offset = 0;
+
+                        console.log(`[WebRTCFileTransfer] Starting to send file: ${file.name}, size: ${file.size}`);
+
+                        fileReader.onload = (event) => {
+                            const arrayBuffer = event.target.result;
+
+                            // Convert ArrayBuffer to base64 for JSON serialization
+                            const base64Chunk = this.arrayBufferToBase64(arrayBuffer);
+
+                            dataChannel.send(JSON.stringify({
+                                type: 'file_chunk',
+                                chunk: base64Chunk,
+                                offset: offset,
+                                fileName: file.name,
+                                fileSize: file.size
+                            }));
+
+                            offset += arrayBuffer.byteLength;
+
+                            if (offset < file.size) {
+                                // Read the next chunk
+                                readNextChunk();
+                            } else {
+                                // File is completely sent
+                                console.log(`[WebRTCFileTransfer] File ${file.name} fully sent`);
+                                dataChannel.send(JSON.stringify({
+                                    type: 'file_transfer_complete',
+                                    fileName: file.name,
+                                    fileSize: file.size
+                                }));
+
+                                this.pendingFile = null;
+                                this.pendingFileReceiver = null;
+                                this.showNotification(`File ${file.name} has been sent successfully.`, 'success');
+                            }
+                        };
+
+                        const readNextChunk = () => {
+                            const slice = file.slice(offset, offset + chunkSize);
+                            fileReader.readAsArrayBuffer(slice);
+                        };
+
+                        readNextChunk(); // Start reading the first chunk
+
+                    } catch (error) {
+                        console.error('[WebRTCFileTransfer] Error initiating file transfer:', error);
+                        fileTransfer.showNotification('Failed to initiate file transfer. Please try again.', 'error');
+                    }
+                }
+            }
+
+                
+            // Helper function to convert ArrayBuffer to Base64
+            arrayBufferToBase64(buffer) {
+                let binary = '';
+                const bytes = new Uint8Array(buffer);
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return window.btoa(binary);
+            }
+            
+            // Handle receiving file chunks
+            handleFileChunk(message, senderId) {
+                // Implementation to handle file chunks and reassemble the file
+                console.log(`[WebRTCFileTransfer] Received file chunk from ${senderId}, offset: ${message.offset}`);
+            }
+            
+            // Complete file transfer (recipient side)
+            completeFileTransfer(message, senderId) {
+                // Implementation to finalize the file transfer
+                console.log(`[WebRTCFileTransfer] File transfer completed from ${senderId}: ${message.fileName}`);
+            }
+            
+            // Show notification
+            showNotification(message, type = 'info') {
+                const notificationsContainer = document.getElementById('notifications-container');
+                if (!notificationsContainer) {
+                    console.error('[WebRTCFileTransfer] Notifications container not found');
+                    return;
+                }
+                
+                const notification = document.createElement('div');
+                notification.className = `alert alert-${type} alert-dismissible fade show`;
+                notification.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                notificationsContainer.appendChild(notification);
+                
+                setTimeout(() => notification.remove(), 5000);
+                }
+            }
+
+           // Wait for DOM to be loaded before initializing
+            document.addEventListener('DOMContentLoaded', function () {
+                // Create notifications container immediately
+                const notificationsContainer = document.createElement('div');
+                notificationsContainer.id = 'notifications-container';
+                notificationsContainer.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 9999;
+                    max-width: 400px;
+                    pointer-events: auto;
+                    opacity: 1;
+                `;
+                document.body.appendChild(notificationsContainer);
+
+                // Initialize WebRTC File Transfer
+                const fileTransfer = new WebRTCFileTransfer();
+                window.fileTransfer = fileTransfer; // For debugging access
+
+                // Initialize file transfer dialog controls
+                const fileTransferDialog = document.getElementById('file-transfer-dialog');
+                const closeDialogBtn = document.getElementById('close-dialog-btn');
+                const sendFileBtn = document.getElementById('send-file-btn');
+                const fileInput = document.getElementById('file-input');
+
+                // Handle send file button click
+                if (sendFileBtn) {
+                    sendFileBtn.addEventListener("click", async function () {
+                        const targetUserId = fileTransferDialog.dataset.targetUserId;
+                        const files = fileInput.files;
+                        
+                        console.log("[WebRTCFileTransfer] File input state:", fileInput);
+                        console.log("[WebRTCFileTransfer] Files selected:", files.length);
+                        console.log("[WebRTCFileTransfer] Target user ID:", targetUserId);
+                        
+                        if (files.length > 0) {
+                            const file = files[0];
+                            console.log("[WebRTCFileTransfer] Initiating file transfer to user:", targetUserId, "File:", file.name);
+                            
+                            try {
+                                const requestMessage = {
+                                    action: 'file_transfer_request',
+                                    receiver_id: targetUserId,
+                                    file_name: file.name,
+                                    file_size: file.size
+                                };
+                                
+                                fileTransfer.socket.send(JSON.stringify(requestMessage));
+                                console.log("[WebRTCFileTransfer] File transfer request sent:", requestMessage);
+                                
+                                await fileTransfer.createConnection(targetUserId);
+                                
+                                fileTransfer.pendingFile = file;
+                                fileTransfer.pendingFileReceiver = targetUserId;
+                                
+                                fileTransferDialog.style.display = 'none';
+                                fileInput.value = '';
+                                
+                                fileTransfer.showNotification('File transfer request sent. Waiting for acceptance...', 'info');
+                            } catch (error) {
+                                console.error('[WebRTCFileTransfer] Error initiating file transfer:', error);
+                                fileTransfer.showNotification('Failed to initiate file transfer. Please try again.', 'error');
+                            }
+                        } else {
+                            console.error("[WebRTCFileTransfer] No files selected. Files object:", files);
+                            alert("Please select a file first");
+                        }
+                    });
+                }
+
+                // Handle close dialog button
+                if (closeDialogBtn) {
+                    closeDialogBtn.addEventListener("click", function() {
+                        fileTransferDialog.style.display = 'none';
+                        fileInput.value = '';
+                    });
+                }
+
+
+                window.testNotification = function() {
+                    fileTransfer.handleFileTransferRequest({
+                        sender_id: 'test-user',
+                        file_name: 'test.txt',
+                        file_size: 1024
+                    });
+                };
+
+                // Add click handlers for Send File buttons
+                document.querySelectorAll(".send-file-btn, .show-file-transfer-btn").forEach(button => {
+                    button.addEventListener("click", function () {
+                        const userElement = this.closest('[data-user-id]');
+                        if (!userElement) {
+                            console.error('[WebRTCFileTransfer] No user element found with data-user-id attribute');
+                            return;
+                        }
+
+                        const userId = userElement.dataset.userId;
+                        console.log("[WebRTCFileTransfer] Showing file transfer dialog for user:", userId);
+                        fileTransferDialog.style.display = 'block';
+                        fileTransferDialog.dataset.targetUserId = userId;
+                    });
+                });
+            });
+    </script>    
 </body>
 </html>

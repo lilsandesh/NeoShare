@@ -27,9 +27,7 @@ def update_user_profile(backend, user, response, *args, **kwargs):
     """Update user profile with additional social auth data."""
     if not UserProfile.objects.filter(user=user).exists():
         return
-    
     profile = user.userprofile
-    
     if backend.name == 'google-oauth2':
         profile.avatar_url = response.get('picture')
         profile.email_verified = response.get('email_verified', False)
