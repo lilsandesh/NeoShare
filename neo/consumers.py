@@ -1,11 +1,15 @@
 # neo/consumers.py
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 from channels.generic.websocket import AsyncWebsocketConsumer
 import logging
 from .models import UserProfile, Room, FileTransfer
 from neo.dht_module import DHTManager  # Adjusted import statement
 from django.utils import timezone
 from channels.db import database_sync_to_async
+from asgiref.sync import sync_to_async
 import hashlib
 
 class LiveUserConsumer(AsyncWebsocketConsumer):
@@ -72,249 +76,294 @@ class LiveUserConsumer(AsyncWebsocketConsumer):
         await save()
 
 
-class DashboardConsumer(AsyncWebsocketConsumer):
-    active_users = {}
-    async def connect(self):
-        self.room_group_name = "dashboard"
-        
-        if self.scope["user"].is_authenticated:
-            user = self.scope["user"]
-            profile = await self.get_user_profile(user)
-            
-            # Generate a unique identifier for the connection
-            self.connection_id = f"{user.id}-{self.channel_name}"
-            
-            # Use Google name if available, otherwise fallback to user's display name
-            display_name = None
-            if profile and profile.google_name:
-                display_name = profile.google_name
-            elif user.get_full_name():
-                display_name = user.get_full_name()
-            else:
-                display_name = user.username
-                
-            # Store user info with unique connection ID
-            DashboardConsumer.active_users[self.connection_id] = {
-                "username": display_name,
-                "join_time": "Just now",
-                "id": str(user.id),
-                "is_google_user": bool(profile and profile.google_name),
-                "connection_id": self.connection_id
-            }
-        else:
-            # Generate unique guest ID
-            self.connection_id = f"guest-{self.channel_name[-8:]}"
-            self.username = f"Guest-{self.channel_name[-4:]}"
-            
-            DashboardConsumer.active_users[self.connection_id] = {
-                "username": self.username,
-                "join_time": "Just now",
-                "id": self.connection_id,
-                "is_google_user": False,
-                "connection_id": self.connection_id
-            }
+# neo/consumers.py
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from asgiref.sync import sync_to_async
+from .models import UserProfile, Room
+import logging
 
+logger = logging.getLogger(__name__)
+
+class DashboardConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        # Get room_code from URL kwargs
+        try:
+            self.room_code = self.scope["url_route"]["kwargs"]["room_code"]
+        except KeyError:
+            await self.close()
+            return  # Close the connection if room_code is not provided
+
+        if not self.room_code:
+            await self.close()
+            return
+
+        self.room_group_name = f"dashboard_{self.room_code}"
+
+        # Join room group
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
+
+        # Send initial users data
         await self.send_users_update()
-        
+
     async def disconnect(self, close_code):
-        if hasattr(self, 'connection_id') and self.connection_id in DashboardConsumer.active_users:
-            del DashboardConsumer.active_users[self.connection_id]
-            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-            await self.send_users_update()
+        # Leave room group
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def receive(self, text_data):
+        text_data_json = json.loads(text_data)
+        message_type = text_data_json.get("type")
+
+        if message_type == "user_notification":
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "user_notification",
+                    "message": text_data_json["message"],
+                    "user_id": text_data_json["user_id"],
+                }
+            )
+
+    async def user_notification(self, event):
+        message = event["message"]
+        user_id = event["user_id"]
+        await self.send(text_data=json.dumps({"type": "notification", "message": message, "user_id": user_id}))
 
     async def send_users_update(self):
-        # Remove duplicate users by taking the latest connection for each user ID
-        unique_users = {}
-        for user_data in DashboardConsumer.active_users.values():
-            user_id = user_data['id']
-            if user_id not in unique_users or user_data['connection_id'] > unique_users[user_id]['connection_id']:
-                unique_users[user_id] = user_data
+        # Fetch room and related data using sync_to_async
+        room = await sync_to_async(Room.objects.get)(code=self.room_code)
+        room_users = await sync_to_async(list)(
+            UserProfile.objects.filter(room_code=self.room_code, is_online=True).select_related('user')
+        )
 
+        # Fetch admin user synchronously
+        admin_user = await sync_to_async(lambda: room.admin)()
+
+        # Prepare users data
+        users_data = [
+            {
+                'id': profile.user.id,
+                'username': profile.google_name or profile.user.username,
+                'is_google_user': bool(profile.google_name),
+                'join_time': profile.user.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+                'is_current_user': profile.user == self.scope["user"],
+                'is_super_user': profile.user == admin_user  # Compare with admin_user
+            }
+            for profile in room_users
+        ]
+
+        print(f"Sending users_data to {self.room_group_name}: {users_data}")
+
+        # Send the users update to the group
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                'type': 'user_list_update',
-                'users': list(unique_users.values())
+                'type': 'users_update',
+                'users': users_data
             }
         )
 
-    async def user_list_update(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'users_update',
-            'users': event['users']
-        }))
-
-    @database_sync_to_async
-    def get_user_profile(self, user):
-        try:
-            return UserProfile.objects.get(user=user)
-        except UserProfile.DoesNotExist:
-            return None
-        
+    async def users_update(self, event):
+        users = event["users"]
+        await self.send(text_data=json.dumps({"type": "users_update", "users": users}))
+# neo/consumers.py
+# neo/consumers.py
 class FileTransferConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        self.user = self.scope["user"]
-        if not self.user.is_authenticated:
-            await self.close()
-            return
-        
-        # Ensure this channel format is consistent
-        self.personal_channel = f"user_{self.user.id}_notifications"
-        
-        print(f"[FileTransferConsumer] User {self.user.id} connected, adding to channel {self.personal_channel}")
-        
-        await self.channel_layer.group_add(
-            self.personal_channel,
-            self.channel_name
-        )
+        self.user = self.scope['user']
+        self.user_id = str(self.user.id) if self.user.is_authenticated else None
+        self.notification_group = f"user_{self.user_id}_notifications"
+        await self.channel_layer.group_add(self.notification_group, self.channel_name)
         await self.accept()
-        
-        # Send confirmation to client
-        await self.send(text_data=json.dumps({
-            'action': 'connection_established',
-            'user_id': str(self.user.id)
-        }))
+        print(f"[FileTransferConsumer] User {self.user_id} connected to {self.notification_group}")
 
     async def disconnect(self, close_code):
-        if hasattr(self, 'personal_channel'):
-            print(f"[FileTransferConsumer] User {self.user.id} disconnected from channel {self.personal_channel}")
-            await self.channel_layer.group_discard(
-                self.personal_channel,
-                self.channel_name
-            )
+        await self.channel_layer.group_discard(self.notification_group, self.channel_name)
+
+    async def mark_user_offline(self):
+        user_profile = await sync_to_async(UserProfile.objects.get)(user=self.user)
+        user_profile.is_online = False
+        user_profile.last_seen = timezone.now()
+        await sync_to_async(user_profile.save)()
 
     async def receive(self, text_data):
-        """Handle incoming WebSocket messages for signaling"""
-        try:
-            data = json.loads(text_data)
-            action = data.get('action')
-            
-            print(f"[FileTransferConsumer] Received {action} from user {self.user.id}")
-            
-            if action == 'webrtc_offer':
-                await self.handle_webrtc_offer(data)
-            elif action == 'webrtc_answer':
-                await self.handle_webrtc_answer(data)
-            elif action == 'webrtc_ice_candidate':
-                await self.handle_webrtc_ice_candidate(data)
-            elif action == 'file_transfer_request':
-                await self.handle_file_transfer_request(data)
-            else:
-                print(f"[FileTransferConsumer] Unknown action: {action}")
-        except json.JSONDecodeError:
-            print(f"[FileTransferConsumer] Failed to parse JSON: {text_data}")
-        except Exception as e:
-            print(f"[FileTransferConsumer] Error processing message: {str(e)}")
+        data = json.loads(text_data)
+        action = data.get('action')
 
-    async def handle_webrtc_offer(self, data):
-        """Relay WebRTC offer to the receiver"""
-        receiver_id = data['receiver_id']
-        offer = data['offer']
+        if action == 'file_transfer_request':
+            receiver_id = data.get('receiver_id')
+            sender_id = data.get('sender_id')
+            file_name = data.get('file_name')
+            file_size = data.get('file_size')
+            print(f"Received action file_transfer_request for user {receiver_id}: {data}")
+            await self.channel_layer.group_send(
+                f"user_{receiver_id}_notifications",
+                {
+                    'type': 'webrtc_message',
+                    'message': {
+                        'action': 'file_transfer_request',
+                        'sender_id': sender_id,
+                        'file_name': file_name,
+                        'file_size': file_size
+                    }
+                }
+            )
+
+        elif action == 'file_transfer_response':
+            receiver_id = data.get('receiver_id')
+            sender_id = data.get('sender_id')
+            accepted = data.get('accepted')
+            if not sender_id:
+                print(f"No sender_id in file_transfer_response message: {data}")
+                return
+            print(f"Received action file_transfer_response for user {self.user_id}: {data}")
+            await self.channel_layer.group_send(
+                f"user_{receiver_id}_notifications",
+                {
+                    'type': 'webrtc_message',
+                    'message': {
+                        'action': 'file_transfer_response',
+                        'sender_id': sender_id,
+                        'accepted': accepted
+                    }
+                }
+            )
+            print(f"File transfer response sent to user {receiver_id}: accepted={accepted}")
+
+        elif action in ['webrtc_offer', 'webrtc_ice_candidate']:
+            target_id = data.get('receiver_id') if action == 'webrtc_offer' else data.get('target_id')
+            if not target_id:
+                print(f"No {'receiver_id' if action == 'webrtc_offer' else 'target_id'} in {action} message: {data}")
+                return
+            message = {
+                'action': action,
+                'sender_id': self.user_id,
+            }
+            if action == 'webrtc_offer':
+                message['offer'] = data.get('offer')
+                print(f"Sent WebRTC offer to user {target_id} from user {self.user_id}: {message['offer']}")
+            else:
+                message['candidate'] = data.get('candidate')
+                print(f"Sent WebRTC ICE candidate to user {target_id} from user {self.user_id}: {message['candidate']}")
+            await self.channel_layer.group_send(
+                f"user_{target_id}_notifications",
+                {
+                    'type': 'webrtc_message',
+                    'message': message
+                }
+            )
+
+    async def file_transfer_request(self, event):
+        await self.send(text_data=json.dumps({
+            'action': 'file_transfer_request',
+            'sender_id': event['sender_id'],
+            'file_name': event['file_name'],
+            'file_size': event['file_size']
+        }))
+
+    # neo/consumers.py
+    async def webrtc_offer(self, event):
+        # Use 'receiver_id' from the message or fallback to group context if needed
+        receiver_id = event.get('message', {}).get('receiver_id') or event.get('receiver_id')
+        if not receiver_id:
+            logger.error(f"No receiver_id in webrtc_offer message: {event}")
+            return
         
-        print(f"[FileTransferConsumer] Relaying WebRTC offer from {self.user.id} to {receiver_id}")
-        
+        offer = event.get('message', {}).get('offer', {})
         await self.channel_layer.group_send(
             f"user_{receiver_id}_notifications",
             {
                 'type': 'webrtc_offer',
                 'message': {
-                    'sender_id': str(self.user.id),
+                    'sender_id': self.user_id,
                     'offer': offer
                 }
             }
         )
-
-    async def handle_webrtc_answer(self, data):
-        """Relay WebRTC answer to the sender"""
-        sender_id = data['sender_id']
-        answer = data['answer']
-
-        print(f"[FileTransferConsumer] Relaying WebRTC answer from {self.user.id} to {sender_id}")
-
-        await self.channel_layer.group_send(
-            f"user_{sender_id}_notifications",
-            {
-                'type': 'webrtc_answer',
-                'message': {
-                    'receiver_id': str(self.user.id),
-                    'answer': answer
-                }
-            }
-        )
-
-    async def handle_webrtc_ice_candidate(self, data):
-        """Relay ICE candidates between sender and receiver"""
-        target_id = data['target_id']
-        candidate = data['candidate']
-
-        print(f"[FileTransferConsumer] Relaying ICE candidate from {self.user.id} to {target_id}")
-
+        logger.info(f"Sent WebRTC offer to user {receiver_id} from user {self.user_id}")
+        
+    async def webrtc_ice_candidate(self, event):
+        # Use 'target_id' from the message or fallback to group context if needed
+        target_id = event.get('message', {}).get('target_id') or event.get('target_id')
+        if not target_id:
+            logger.error(f"No target_id in webrtc_ice_candidate message: {event}")
+            return
+        
+        candidate = event.get('message', {}).get('candidate', {})
         await self.channel_layer.group_send(
             f"user_{target_id}_notifications",
             {
                 'type': 'webrtc_ice_candidate',
                 'message': {
-                    'sender_id': str(self.user.id),
+                    'sender_id': self.user_id,
                     'candidate': candidate
                 }
             }
         )
+        logger.info(f"Sent WebRTC ICE candidate to user {target_id} from user {self.user_id}")
 
-    async def handle_file_transfer_request(self, data):
-        """Handle file transfer request"""
-        receiver_id = data.get('receiver_id')
-        file_name = data.get('file_name')
-        file_size = data.get('file_size')
+    async def webrtc_answer(self, event):
+        receiver_id = event.get('receiver_id')
+        if not receiver_id:
+            logger.error(f"No receiver_id in webrtc_answer message: {event}")
+            return
         
-        print(f"[FileTransferConsumer] File transfer request from {self.user.id} to {receiver_id}: {file_name} ({file_size} bytes)")
-        
+        answer = event.get('answer', {})
         await self.channel_layer.group_send(
             f"user_{receiver_id}_notifications",
             {
-                'type': 'file_transfer_request',
+                'type': 'webrtc_answer',
                 'message': {
-                    'sender_id': str(self.user.id),
-                    'file_name': file_name,
-                    'file_size': file_size
+                    'sender_id': self.user_id,
+                    'answer': answer
                 }
             }
         )
+        logger.info(f"Sent WebRTC answer to user {receiver_id} from user {self.user_id}")
 
-    async def webrtc_offer(self, event):
-        """Send WebRTC offer to receiver"""
-        print(f"[FileTransferConsumer] Sending WebRTC offer to {self.user.id}: {event['message']}")
+    async def handle_webrtc_signal(self, data, signal_type):
+        target_id = data.get('target_id') if signal_type == 'webrtc_ice_candidate' else data.get('sender_id')
+        if not target_id:
+            logger.error(f"No target_id or sender_id in {signal_type} message: {data}")
+            return
+
+        message_key = 'candidate' if signal_type == 'webrtc_ice_candidate' else signal_type.split('_')[1]
+        await self.channel_layer.group_send(
+            f"user_{target_id}_notifications",
+            {
+                'type': signal_type,
+                'message': {
+                    'sender_id': self.user_id,
+                    message_key: data.get(message_key, data.get(signal_type.split('_')[1], None))
+                }
+            }
+        )
+        logger.info(f"Sent {signal_type} to user {target_id} from user {self.user_id}")
+    
+
+    async def webrtc_message(self, event):
+        message = event['message']
         await self.send(text_data=json.dumps({
-            'action': 'webrtc_offer',  # Use 'action' instead of 'type'
-            'sender_id': event['message']['sender_id'],
-            'offer': event['message']['offer']
+            'type': 'webrtc_message',
+            'message': message
         }))
 
-    async def webrtc_answer(self, event):
-        """Send WebRTC answer to sender"""
-        print(f"[FileTransferConsumer] Sending WebRTC answer to {self.user.id}: {event['message']}")
-        await self.send(text_data=json.dumps({
-            'action': 'webrtc_answer',  # Use 'action' instead of 'type'
-            'receiver_id': event['message']['receiver_id'],
-            'answer': event['message']['answer']
-        }))
-
-    async def webrtc_ice_candidate(self, event):
-        """Send ICE candidate to the target peer"""
-        print(f"[FileTransferConsumer] Sending ICE candidate to {self.user.id}: {event['message']}")
-        await self.send(text_data=json.dumps({
-            'action': 'webrtc_ice_candidate',  # Use 'action' instead of 'type'
-            'sender_id': event['message']['sender_id'],
-            'candidate': event['message']['candidate']
-        }))
-
-    async def file_transfer_request(self, event):
-        """Send file transfer request to receiver"""
-        print(f"[FileTransferConsumer] Sending file transfer request to {self.user.id}: {event['message']}")
-        await self.send(text_data=json.dumps({
-            'action': 'file_transfer_request',  # Use 'action' instead of 'type'
-            'sender_id': event['message']['sender_id'],
-            'file_name': event['message']['file_name'],
-            'file_size': event['message']['file_size']
-        }))
+    # neo/consumers.py
+    async def file_transfer_response(self, event):
+        # Use 'sender_id' from the message or fallback to group context if needed
+        sender_id = event.get('message', {}).get('sender_id') or event.get('sender_id')
+        if not sender_id:
+            logger.error(f"No sender_id in file_transfer_response message: {event}")
+            return
+        
+        accepted = event.get('message', {}).get('accepted', False) or event.get('accepted', False)
+        await self.channel_layer.group_send(
+            f"user_{sender_id}_notifications",
+            {
+                'type': 'file_transfer_response',
+                'receiver_id': self.user_id,
+                'accepted': accepted
+            }
+        )
+        logger.info(f"File transfer response sent to user {sender_id}: accepted={accepted}")

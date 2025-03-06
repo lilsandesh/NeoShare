@@ -121,6 +121,42 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Get CSRF token from cookies
+        function getCSRFToken() {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                document.cookie.split(';').forEach(cookie => {
+                    let trimmedCookie = cookie.trim();
+                    if (trimmedCookie.startsWith("csrftoken=")) {
+                        cookieValue = trimmedCookie.substring(10);
+                    }
+                });
+            }
+            return cookieValue;
+        }
+
+        // Trigger logout synchronously on tab closure
+        function triggerLogout() {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/logout/', false);  // Synchronous request
+            xhr.setRequestHeader('X-CSRFToken', getCSRFToken());
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send();
+            
+            if (xhr.status === 200) {
+                console.log("Logout successful on tab close from room.html");
+                sessionStorage.clear();
+                localStorage.clear();
+                window.location.href = "/login/";  // Redirect after logout
+            } else {
+                console.error("Logout failed during tab close:", xhr.status);
+            }
+        }
+
+        // Automatic logout on tab close
+        window.addEventListener("beforeunload", function(event) {
+            triggerLogout();
+        });
         document.addEventListener("DOMContentLoaded", function () {
             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 

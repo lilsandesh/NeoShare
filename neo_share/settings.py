@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-jh$8f)hpat&_jqa^83+2%9x7r&@mrxv5j8pq0a1f@v^mj_0m-0
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['*']
 
 SITE_ID = 1
 
@@ -46,9 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
-    # Ensure django.contrib.sites appears only once!
-    'django.contrib.sites',
+    'django.contrib.sites',  # Keep this only once!
 
     # Your custom app
     'neo',  
@@ -63,7 +61,6 @@ INSTALLED_APPS = [
 
 # ASGI Configuration
 ASGI_APPLICATION = 'neo_share.asgi.application' # Add this line to the end of the file
-
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -84,6 +81,12 @@ MESSAGE_TAGS = {
     messages.ERROR: 'alert-danger',
 }
 
+# neo_share/settings.py
+SESSION_COOKIE_AGE = 300  # 5 minutes session timeout
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Expire session when browser closes
+SESSION_SAVE_EVERY_REQUEST = True  # Update session on every request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -95,6 +98,7 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'social_django.middleware.SocialAuthExceptionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'neo.middleware.LoginRequiredMiddleware',  # Add custom middleware
 
 ]
 
@@ -139,11 +143,14 @@ WSGI_APPLICATION = 'neo_share.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': 'users',
+        'USER': 'postgres',
+        'PASSWORD': '12345',
+        'Port': '5432',
+        'HOST': 'localhost',
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -200,6 +207,13 @@ AUTHENTICATION_BACKENDS = (
 
 SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '232867158604-jk128d2ubej5lvn7299fhbd5mqo6nhse.apps.googleusercontent.com'
 SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = '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'
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email', 'profile', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
+SOCIAL_AUTH_URL_NAMESPACE = 'social'
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'openid'
+]
 
 SOCIAL_AUTH_URL_NAMESPACE = 'social'
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/room/'
@@ -208,9 +222,9 @@ SOCIAL_AUTH_LOGIN_ERROR_URL = '/login/'
 SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.social_details',
     'social_core.pipeline.social_auth.social_uid',
-    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'neo.views.handle_google_login',  # Custom handler
     'social_core.pipeline.user.get_username',
-    'social_core.pipeline.social_auth.associate_by_email',
     'social_core.pipeline.user.create_user',
     'social_core.pipeline.social_auth.associate_user',
     'social_core.pipeline.social_auth.load_extra_data',

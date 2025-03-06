@@ -1,10 +1,10 @@
-from django.shortcuts import render, redirect
-from django.http import JsonResponse, HttpResponse, HttpResponseRedirect
+from django.shortcuts import render, redirect, HttpResponseRedirect
+from django.http import JsonResponse
 from django.contrib.auth.models import User
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
-from django.utils import timezone 
+from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import OTP, Room, Notification, UserProfile, FileTransfer
 from django.views.decorators.csrf import csrf_exempt
@@ -15,27 +15,65 @@ import logging
 import random
 import asyncio
 from neo.dht_module import Server, DHTManager
+from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth.tokens import default_token_generator
 from asgiref.sync import async_to_sync
-from django.contrib.auth.forms import PasswordResetForm
-from django.utils.http import urlsafe_base64_encode
+from channels.layers import get_channel_layer
 from django.urls import reverse
 from django.contrib.sites.shortcuts import get_current_site
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode
-from neo.dht_module import DHTManager
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 
-# Configure logger
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-def SignupPage(request):
+
+# Global DHT Server Instance
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+dht_server = Server()
+
+async def start_dht():
+    await dht_server.listen(9000)
+    await dht_server.bootstrap([("127.0.0.1", 9000)])
+
+loop.run_until_complete(start_dht())
+
+# Helper Functions
+async def get_room(code):
+    return await dht_server.get(code)
+
+async def store_room(code, admin_username):
+    """Store room information in DHT."""
+    try:
+        dht_manager = await DHTManager.get_instance()
+        success = await dht_manager.store_room(code, admin_username)
+        if success:
+            logger.info(f"Room {code} stored successfully in DHT")
+        return success
+    except Exception as e:
+        logger.error(f"Failed to store room in DHT: {e}")
+        return False
+
+async def get_room_from_dht(code):
+    """Retrieve room information from DHT."""
+    try:
+        dht_manager = await DHTManager.get_instance()
+        return await dht_manager.get_room(code)
+    except Exception as e:
+        logger.error(f"Failed to retrieve room from DHT: {e}")
+        return None
+
+def generate_room_code(length=6):
+    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=length))
+
+# Authentication Views
+def signup(request):
     if request.method == 'POST':
         username = request.POST.get('username')
         email = request.POST.get('email')
         password = request.POST.get('password')
         confirm_password = request.POST.get('confirm-password')
 
-        # Basic validation
         if not all([username, email, password, confirm_password]):
             return JsonResponse({'error': 'All fields are required'}, status=400)
 
@@ -48,91 +86,154 @@ def SignupPage(request):
         if User.objects.filter(email=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
 
-        # Generate OTP
         otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-
-        # Delete any existing OTP for this email
         OTP.objects.filter(email=email).delete()
 
-        # Create new OTP
         try:
-            otp_obj = OTP.objects.create(
-                email=email,
-                otp=otp
+            otp_obj = OTP.objects.create(email=email, otp=otp)
+            send_mail(
+                'Your OTP for Registration',
+                f'Your OTP is: {otp}. This OTP will expire in 5 minutes.',
+                'littlesandesh123@gmail.com',
+                [email]
             )
-            
-            # Send OTP email
-            subject = 'Your OTP for Registration'
-            message = f'Your OTP is: {otp}. This OTP will expire in 30 seconds.'
-            from_email = 'littlesandesh123@gmail.com'
-            recipient_list = [email]
-            
-            send_mail(subject, message, from_email, recipient_list)
-
-            # Save signup data in session
             request.session['signup_data'] = {
                 'username': username,
                 'email': email,
                 'password': password
             }
-            
             return JsonResponse({'message': 'OTP sent successfully', 'status': 'success'})
-            
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"Error sending OTP: {e}")
             return JsonResponse({'error': 'Failed to send OTP'}, status=500)
 
     return render(request, 'signup.html')
 
-def signup(request):
-    return render(request, 'signup.html')  # Ensure 'signup.html' exists in your templates folder 
+@require_http_methods(["POST"])
+def verify_otp(request):
+    try:
+        data = json.loads(request.body)
+        email = data.get("email")
+        entered_otp = data.get("otp")
 
-def VerifyOTPPage(request):
+        if not email or not entered_otp:
+            return JsonResponse({"status": "error", "error": "Missing email or OTP"}, status=400)
+
+        otp_record = OTP.objects.get(email=email)
+        if otp_record.otp != entered_otp or otp_record.is_expired():
+            return JsonResponse({"status": "error", "error": "Invalid or expired OTP"}, status=400)
+
+        signup_data = request.session.get("signup_data")
+        if signup_data:
+            user = User.objects.create_user(
+                username=signup_data["username"],
+                email=signup_data["email"],
+                password=signup_data["password"]
+            )
+            user.save()
+            del request.session["signup_data"]
+            return JsonResponse({"status": "success", "message": "Signup successful", "redirect_url": "/login/"})
+        return JsonResponse({"status": "error", "error": "No signup data found"}, status=400)
+    except OTP.DoesNotExist:
+        return JsonResponse({"status": "error", "error": "OTP not found"}, status=400)
+    except Exception as e:
+        logger.error(f"Error verifying OTP: {e}")
+        return JsonResponse({"status": "error", "error": str(e)}, status=500)
+
+def login_view(request):
     if request.method == "POST":
+        email = request.POST.get("email")
+        password = request.POST.get("password")
+        
         try:
-            raw_data = request.body.decode("utf-8")  # Decode request body
-            print(f"Raw Request Body: {raw_data}")  # Debugging log
-
-            data = json.loads(raw_data)  # ✅ Parse JSON correctly
-            email = data.get("email")
-            entered_otp = data.get("otp")
-
-            if not email or not entered_otp:
-                return JsonResponse({"status": "error", "error": "Missing email or OTP"}, status=400)
-
-            # Fetch OTP from the database
-            try:
-                otp_record = OTP.objects.get(email=email)
-            except OTP.DoesNotExist:
-                return JsonResponse({"status": "error", "error": "OTP not found"}, status=400)
-
-            # Check if OTP matches
-            if otp_record.otp == entered_otp:
-                # ✅ FIXED: Use timezone-aware now()
-                if otp_record.created_at + timedelta(minutes=5) < timezone.now():
-                    return JsonResponse({"status": "error", "error": "OTP has expired"}, status=400)
-
-                # Create user after OTP verification
-                signup_data = request.session.get("signup_data")
-                if signup_data:
-                    user = User.objects.create_user(
-                        username=signup_data["username"],
-                        email=signup_data["email"],
-                        password=signup_data["password"]
-                    )
-                    user.save()
-                    del request.session["signup_data"]  # Remove session data after signup
-
-                return JsonResponse({"status": "success", "message": "OTP verified! Redirecting...", "redirect_url": "/login/"})
+            user = User.objects.get(email=email)
+            username = user.username
+            user = authenticate(request, username=username, password=password)
+            
+            if user is not None:
+                request.session.flush()
+                login(request, user)
+                request.session['last_activity'] = timezone.now().timestamp()
+                return redirect("room")
             else:
-                return JsonResponse({"status": "error", "error": "Invalid OTP"}, status=400)
+                messages.error(request, "Invalid email or password")
+        except User.DoesNotExist:
+            messages.error(request, "Invalid email or password")
+    
+    # Handle social auth errors
+    error = request.GET.get('error')
+    if error:
+        messages.error(request, "Authentication failed. Please try again.")
+    
+    # Force logout if accessing /login/ via GET, even if authenticated
+    if request.user.is_authenticated:
+        user_profile = UserProfile.objects.get(user=request.user)
+        user_profile.is_online = False
+        user_profile.room_code = None
+        user_profile.save()
+        logout(request)
+        request.session.flush()
+        messages.info(request, "Please log in again.")
+    
+    return render(request, 'login.html')
 
-        except json.JSONDecodeError:
-            return JsonResponse({"status": "error", "error": "Invalid JSON format"}, status=400)
-        except Exception as e:
-            return JsonResponse({"status": "error", "error": str(e)}, status=500)
+def handle_auth_error(request):
+    messages.error(request, "Authentication failed. Please try again.")
+    return redirect('login')
 
-    return JsonResponse({"status": "error", "error": "Invalid request method"}, status=400)
+def handle_google_login(backend, user, response, *args, **kwargs):
+    user_info = response
+    google_id = user_info.get('sub')
+    email = user_info.get('email')
+    name = user_info.get('name')
+    request = kwargs.get('request')
+
+    try:
+        social_account = SocialAccount.objects.get(provider='google', uid=google_id)
+        user = social_account.user
+        logger.info(f"Existing Google account found for {google_id}, linking to user {user.username}")
+    except SocialAccount.DoesNotExist:
+        try:
+            user = User.objects.get(email=email)
+            if SocialAccount.objects.filter(user=user, provider='google').exists():
+                username = f"{email.split('@')[0]}_{google_id[-4:]}"
+                user = User.objects.create_user(username=username, email=email, password=None)
+                SocialAccount.objects.create(user=user, provider='google', uid=google_id, extra_data=user_info)
+                logger.info(f"New user created for {google_id} with username {username} due to email conflict")
+            else:
+                SocialAccount.objects.create(user=user, provider='google', uid=google_id, extra_data=user_info)
+                logger.info(f"Linked Google ID {google_id} to existing user {user.username}")
+        except User.DoesNotExist:
+            username = f"{email.split('@')[0]}_{google_id[-4:]}"
+            user = User.objects.create_user(username=username, email=email, password=None)
+            SocialAccount.objects.create(user=user, provider='google', uid=google_id, extra_data=user_info)
+            logger.info(f"New user created for {google_id} with username {username}")
+
+    profile, created = UserProfile.objects.get_or_create(user=user)
+    
+    if profile.is_online and request.user.is_authenticated and request.user != user:
+        logger.warning(f"User {user.username} is already logged in elsewhere. Forcing logout of previous session.")
+        previous_session = UserProfile.objects.filter(user=user, is_online=True).exclude(user=request.user).first()
+        if previous_session:
+            previous_session.is_online = False
+            previous_session.room_code = None
+            previous_session.save()
+    
+    profile.google_name = name
+    profile.is_online = True
+    profile.last_seen = timezone.now()
+    profile.room_code = None  # Ensure no automatic room assignment
+    profile.save()
+    
+    # Flush existing session to ensure fresh start
+    request.session.flush()
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    request.session['last_activity'] = timezone.now().timestamp()  # Set fresh activity timestamp
+    logger.info(f"User profile updated for {user.username} with Google name {name}")
+
+    if not profile.room_code:
+        return redirect('room')  # Redirect to room to create/join
+    return redirect('dashboard')
 
 def password_reset_request(request):
     if request.method == "POST":
@@ -144,12 +245,10 @@ def password_reset_request(request):
                 token = default_token_generator.make_token(user)
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
                 
-                # Build the reset link using request.build_absolute_uri
                 reset_link = request.build_absolute_uri(
                     reverse('password_reset_confirm', kwargs={'uidb64': uid, 'token': token})
                 )
 
-                # Send the reset email
                 send_mail(
                     "Reset Your Password",
                     f"Click the link below to reset your password:\n{reset_link}",
@@ -200,188 +299,157 @@ def password_reset_confirm(request, uidb64, token):
         messages.error(request, "The password reset link is invalid or has expired.")
         return redirect("login")
 
-def LoginPage(request):
-    if request.method == "POST":
-        email = request.POST.get("email")
-        password = request.POST.get("password")
-        
-        try:
-            # Get username from email
-            user = User.objects.get(email=email)
-            username = user.username
-            # Authenticate with username
-            user = authenticate(request, username=username, password=password)
-            
-            if user is not None:
-                login(request, user)
-                return redirect("room")
-            else:
-                messages.error(request, "Invalid email or password")
-        except User.DoesNotExist:
-            messages.error(request, "Invalid email or password")
-    
-    # Add this to handle social auth errors
-    error = request.GET.get('error')
-    if error:
-        messages.error(request, "Authentication failed. Please try again.")
-    
-    return render(request, "login.html")
-
-def handle_auth_error(request):
-    messages.error(request, "Authentication failed. Please try again.")
-    return redirect('login')
-
+# Room and Dashboard Views
 @login_required(login_url='login')
 def room_view(request):
-    return render(request, "room.html")
-
-# Global DHT Server Instance
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-dht_server = Server()
-
-async def start_dht():
-    await dht_server.listen(9000)
-    await dht_server.bootstrap([("127.0.0.1", 9000)])
-
-loop.run_until_complete(start_dht())
-
-# Retrieve room from DHT
-async def get_room(code):
-    return await dht_server.get(code)
-
-# Function to generate a unique room code
-def generate_room_code(length=6):
-    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=length))
-
-# Store room in DHT
-async def store_room(code, admin_username):
-    """Store room information in DHT."""
-    try:
-        dht_manager = await DHTManager.get_instance()
-        success = await dht_manager.store_room(code, admin_username)
-        if success:
-            logger.info(f"Room {code} stored successfully in DHT")
-        return success
-    except Exception as e:
-        logger.error(f"Failed to store room in DHT: {e}")
-        return False
-
-async def get_room_from_dht(code):
-    """Retrieve room information from DHT."""
-    try:
-        dht_manager = await DHTManager.get_instance()
-        return await dht_manager.get_room(code)
-    except Exception as e:
-        logger.error(f"Failed to retrieve room from DHT: {e}")
-        return None
-
-@login_required
+    user_profile = UserProfile.objects.get(user=request.user)
+    context = {
+        'current_room': user_profile.room_code,
+        'username': user_profile.google_name or request.user.username
+    }
+    return render(request, "room.html", context)
 @login_required(login_url='login')
 @require_http_methods(["POST"])
 def create_room(request):
-    """Create a new room and store it in both database and DHT."""
     admin = request.user
     room_code = generate_room_code()
     
     try:
-        # Create room in database
         room = Room.objects.create(code=room_code, admin=admin)
         room.users.add(admin)
         
-        # Get or create user profile
-        user_profile, _ = UserProfile.objects.get_or_create(user=admin)
+        user_profile = UserProfile.objects.get(user=admin)
         user_profile.room_code = room_code
+        user_profile.is_online = True
         user_profile.save()
         
-        # Store in DHT
-        dht_success = async_to_sync(store_room)(room_code, admin.username)
-        
-        if not dht_success:
-            logger.error(f"Failed to store room {room_code} in DHT")
-            room.delete()
-            return JsonResponse({
-                "status": "error",
-                "message": "Failed to create room in DHT"
-            }, status=500)
-        
-        # Store room code in session
         request.session['room_code'] = room_code
+        dht_success = async_to_sync(store_room)(room_code, admin.username)
+        if not dht_success:
+            room.delete()
+            return JsonResponse({"status": "error", "message": "Failed to create room in DHT"}, status=500)
         
-        return JsonResponse({
-            "status": "success",
-            "room_code": room_code,
-            "redirect_url": "/dashboard/"
-        })
-    
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"dashboard_{room_code}",
+            {
+                'type': 'user_notification',
+                'message': f"{user_profile.google_name or admin.username} has created the room",
+                'user_id': admin.id
+            }
+        )
+        
+        return JsonResponse({"status": "success", "room_code": room_code})
     except Exception as e:
         logger.error(f"Failed to create room: {e}")
-        # Cleanup any partial creation
         Room.objects.filter(code=room_code).delete()
-        return JsonResponse({
-            "status": "error",
-            "message": str(e)
-        }, status=500)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
-@login_required
 @login_required(login_url='login')
 @require_http_methods(["POST"])
-@csrf_exempt  # Temporarily disable CSRF for debugging (remove this later)
+@csrf_exempt
 def join_room(request):
-    if request.method == "POST":
-        room_code = request.POST.get("room_code", "").strip()  # Remove spaces
+    room_code = request.POST.get("room_code", "").strip()
+    if not room_code:
+        return JsonResponse({"error": "Room code is required"}, status=400)
 
-        if not room_code:
-            return JsonResponse({"error": "Room code is required"}, status=400)
+    print(f"Received room code: {room_code}")
+    try:
+        room = Room.objects.get(code=room_code)
+        user = request.user
+        if user not in room.users.all():
+            room.users.add(user)
+        
+        user_profile, created = UserProfile.objects.get_or_create(user=user)
+        user_profile.room_code = room_code
+        user_profile.is_online = True
+        user_profile.save()
 
-        # Debugging log
-        print(f"Received room code: {room_code}")
+        request.session['room_code'] = room_code  # Store in session
+        logger.info(f"User {user.username} joined room {room_code}. Online users: {[u.username for u in room.users.all()]}")
 
-        # Check if the room exists in the database
-        if not Room.objects.filter(code=room_code).exists():
-            return JsonResponse({"error": "Room not found"}, status=404)
-
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"dashboard_{room_code}",
+            {
+                'type': 'user_notification',
+                'message': f"{user_profile.google_name or user.username} has joined the room",
+                'user_id': user.id
+            }
+        )
+        
         return JsonResponse({"message": "Room joined successfully", "room_code": room_code})
+    except Room.DoesNotExist:
+        return JsonResponse({"error": "Room not found"}, status=404)
+    except Exception as e:
+        logger.error(f"Error joining room: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
 
-    return JsonResponse({"error": "Invalid request method"}, status=405)
-@login_required
 @login_required(login_url='login')
-def room_view(request):
-    """Render the room template with user's current room info."""
-    try:
-        user_profile = UserProfile.objects.filter(user=request.user).first()
-        context = {
-            'current_room': getattr(user_profile, 'room_code', None)
-        }
-    except Exception as e:
-        logger.error(f"Error in room_view: {e}")
-        context = {'current_room': None}
-    
-    return render(request, "room.html", context)
-
-@login_required
-def room_detail(request, room_code):
-    """Display detailed room information."""
-    try:
-        room = Room.objects.filter(code=room_code).first()
-        if not room:
-            return redirect('room')
-        
-        # Get DHT room data
-        dht_room = async_to_sync(get_room_from_dht)(room_code)
-        
-        context = {
-            'room': room,
-            'dht_data': dht_room,
-            'is_admin': request.user == room.admin,
-            'room_members': room.users.all(),
-        }
-        
-        return render(request, 'room_detail.html', context)
-        
-    except Exception as e:
-        logger.error(f"Error in room_detail view: {e}")
+def dashboard_view(request):
+    user_profile = UserProfile.objects.get(user=request.user)
+    if not user_profile.room_code:
         return redirect('room')
+    
+    seven_days_ago = timezone.now() - timedelta(days=7)
+    room = Room.objects.get(code=user_profile.room_code)
+    room_users = UserProfile.objects.filter(room_code=user_profile.room_code, is_online=True).select_related('user')
+    
+    users_data = [
+        {
+            'id': profile.user.id,
+            'username': profile.google_name or profile.user.username,
+            'is_google_user': bool(profile.google_name),
+            'join_time': profile.user.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+            'is_current_user': profile.user == request.user,
+            'is_super_user': profile.user == room.admin
+        }
+        for profile in room_users
+    ]
+
+    logger.info(f"Rendering dashboard for {request.user.username} with users_data: {users_data}")
+    context = {
+        'files_sent': FileTransfer.objects.filter(sender=request.user, timestamp__gte=seven_days_ago).count(),
+        'files_received': FileTransfer.objects.filter(receiver=request.user, timestamp__gte=seven_days_ago).count(),
+        'notifications': Notification.objects.filter(user=request.user, is_read=False)[:5],
+        'room_code': user_profile.room_code,
+        'users_data': json.dumps(users_data)
+    }
+    return render(request, 'dashboard.html', context)
+
+# neo/views.py (partial excerpt for logout_view)
+@login_required(login_url='login')
+@require_http_methods(["POST"])
+def logout_view(request):
+    try:
+        user_profile = UserProfile.objects.get(user=request.user)
+        room_code = user_profile.room_code
+        
+        if room_code:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"dashboard_{room_code}",
+                {
+                    'type': 'user_notification',
+                    'message': f"{user_profile.google_name or request.user.username} has left the room",
+                    'user_id': request.user.id
+                }
+            )
+        
+        # Update profile before flushing session
+        user_profile.is_online = False
+        user_profile.room_code = None
+        user_profile.save()
+        
+        # Log out and flush session
+        logout(request)
+        request.session.flush()
+        
+        return JsonResponse({"status": "success", "message": "Logged out successfully"})
+    except Exception as e:
+        logger.error(f"Error during logout: {e}")
+        return JsonResponse({"status": "error", "message": "Logout failed"}, status=500)
+
 @login_required(login_url='login')
 def leave_room(request):
     """Leave the current room."""
@@ -396,6 +464,7 @@ def leave_room(request):
                 
                 # Clear room code from profile
                 user_profile.room_code = None
+                user_profile.is_online = False
                 user_profile.save()
                 
                 # Clear session
@@ -418,77 +487,29 @@ def leave_room(request):
                 "message": str(e)
             }, status=500)
 
-@login_required
-@login_required(login_url='login')
-def dashboard_view(request):
-    # Get current user's profile and room information
-    user_profile = UserProfile.objects.get(user=request.user)
-    seven_days_ago = timezone.now() - timedelta(days=7)
-    
-    # Get all users in the same room if user is in a room
-    if user_profile.room_code:
-        room_users = UserProfile.objects.filter(
-            room_code=user_profile.room_code
-        ).select_related('user')
-    else:
-        room_users = UserProfile.objects.filter(is_online=True).select_related('user')
-
-    context = {
-        'files_sent': FileTransfer.objects.filter(
-            sender=request.user,
-            timestamp__gte=seven_days_ago
-        ).count(),
-        
-        'files_received': FileTransfer.objects.filter(
-            receiver=request.user,
-            timestamp__gte=seven_days_ago
-        ).count(),
-        
-        'malicious_threats': FileTransfer.objects.filter(
-            receiver=request.user,
-            is_malicious=True,
-            timestamp__gte=seven_days_ago
-        ).count(),
-        
-        'notifications': Notification.objects.filter(
-            user=request.user,
-            is_read=False
-        )[:5],
-        
-        'room_code': user_profile.room_code,
-        'room_users': room_users,
-        'total_users_in_room': room_users.count()
-    }
-    
-    return render(request, 'dashboard.html', context)
-
-@login_required
 @login_required(login_url='login')
 def mark_notification_read(request, notification_id):
     Notification.objects.filter(id=notification_id, user=request.user).update(is_read=True)
     return JsonResponse({'status': 'success'})
 
-@login_required
 @login_required(login_url='login')
-def DashboardPage(request):
-    return render(request, 'dashboard.html')
-
-
-# views.py or wherever you handle Google authentication
-def handle_google_login(request, user_info):
-    email = user_info.get('email')
-    user = User.objects.filter(email=email).first()
-    
-    if user:
-        profile, created = UserProfile.objects.get_or_create(user=user)
-        profile.google_name = user_info.get('name')  # Save Google name
-        profile.save()
+def room_detail(request, room_code):
+    """Display detailed room information."""
+    try:
+        room = Room.objects.filter(code=room_code).first()
+        if not room:
+            return redirect('room')
         
-        login(request, user)
-    return redirect('dashboard')
-
-
-@login_required(login_url='login')
-def LogoutPage(request):
-    logout(request)
-    return redirect('login')
+        dht_room = async_to_sync(get_room_from_dht)(room_code)
+        
+        context = {
+            'room': room,
+            'dht_data': dht_room,
+            'is_admin': request.user == room.admin,
+            'room_members': room.users.all(),
+        }
+        
+        return render(request, 'room_detail.html', context)
+    except Exception as e:
+        logger.error(f"Error in room_detail view: {e}")
+        return redirect('room')
