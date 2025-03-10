@@ -1,3 +1,4 @@
+
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
@@ -139,16 +140,15 @@
     <div id="file-transfer-dialog" class="file-transfer-dialog" style="display: none;">
         <div class="dialog-content bg-white rounded-3 shadow">
             <div class="dialog-header border-bottom p-3">
-                <h5 class="m-0">Send File</h5>
             </div>
             <div class="dialog-body p-3">
-                <p class="text-muted mb-3">Select files to send to the recipient</p>
                 <div class="mb-3">
                     <input type="file" id="file-input" class="form-control">
                 </div>
                 <div class="d-flex justify-content-end gap-2">
-                    <button id="close-dialog-btn" class="btn btn-light"><i class="fas fa-times me-1"></i>Cancel</button>
-                    <button id="send-file-btn" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Send</button>
+                    <!-- Add file input and send button to the UI -->
+                    <input type="file" id="fileInput">
+                    <button onclick="sendFileTransferRequest('1')">Send File</button>
                 </div>
             </div>
         </div>
@@ -495,6 +495,7 @@
                 });
             }
 
+
             signalingSocket.send(JSON.stringify({
                 action: "file_transfer_request",
                 receiver_id: targetId,
@@ -572,21 +573,30 @@
 
             container.innerHTML = ""; // Clear existing cards
 
-            // Find the superuser (assuming only one superuser exists, the room admin)
+            // Find the current user's role
+            const currentUser = users.find(user => user.id == currentUserId);
+            const isCurrentUserSuperUser = currentUser && currentUser.is_super_user;
+
+            // Function to determine if "Send File" button should be shown
+            function shouldShowSendFileButton(user) {
+                return user.id != currentUserId; // Show button for all other users
+            }
+
+            // Find the superuser
             const superUser = users.find(user => user && user.is_super_user === true) || null;
             let guestCount = 0;
-            const maxGuests = 9; // Limit to 9 guests
+            const maxGuests = 9;
 
             console.log("Superuser found:", superUser);
 
-            // Render Superuser Card (if exists and has valid properties)
+            // Render Superuser Card
             if (superUser && superUser.id) {
                 const displayName = superUser.is_current_user ? 'You (Super User #1)' : 'Super User #1';
                 const cardClass = 'super-user-card';
                 const userIcon = superUser.is_google_user ? 'fab fa-google' : 'fas fa-user-circle';
-                const buttonHtml = superUser.is_current_user 
-                    ? '' 
-                    : `<button class="btn btn-primary send-file-btn" data-user-id="${superUser.id || 'unknown'}">Send File</button>`;
+                const buttonHtml = shouldShowSendFileButton(superUser) 
+                    ? `<button class="btn btn-primary send-file-btn" data-user-id="${superUser.id || 'unknown'}">Send File</button>` 
+                    : '';
 
                 let card = document.createElement("div");
                 card.className = "col";
@@ -603,14 +613,14 @@
                 `;
                 container.appendChild(card);
 
-                if (!superUser.is_current_user) {
+                if (buttonHtml) {
                     card.querySelector('.send-file-btn').addEventListener('click', () => {
                         showFileTransferDialog(superUser.id || 'unknown');
                     });
                 }
             }
 
-            // Render Guest Cards (up to 9)
+            // Render Guest Cards
             const guests = (users || []).filter(user => user && user.is_super_user !== true);
             console.log("Guests found:", guests);
             guests.slice(0, maxGuests).forEach((user) => {
@@ -619,9 +629,9 @@
                 const displayName = user.is_current_user ? `You (Guest #${guestCount})` : `Guest #${guestCount}`;
                 const cardClass = 'guest-card';
                 const userIcon = user.is_google_user ? 'fab fa-google' : 'fas fa-user-circle';
-                const buttonHtml = user.is_current_user 
-                    ? '' 
-                    : `<button class="btn btn-primary send-file-btn" data-user-id="${user.id || 'unknown'}">Send File</button>`;
+                const buttonHtml = shouldShowSendFileButton(user) 
+                    ? `<button class="btn btn-primary send-file-btn" data-user-id="${user.id || 'unknown'}">Send File</button>` 
+                    : '';
 
                 let card = document.createElement("div");
                 card.className = "col";
@@ -638,7 +648,7 @@
                 `;
                 container.appendChild(card);
 
-                if (!user.is_current_user) {
+                if (buttonHtml) {
                     card.querySelector('.send-file-btn').addEventListener('click', () => {
                         showFileTransferDialog(user.id || 'unknown');
                     });
@@ -1422,8 +1432,5 @@
             document.body.appendChild(notificationsContainer);
         });
     </script>
-<!-- Add file input and send button to the UI -->
-<input type="file" id="fileInput">
-<button onclick="sendFileTransferRequest('1')">Send File to User 1</button>
 </body>
 </html>
