@@ -9,105 +9,110 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-import os
-from pathlib import Path
+import os  # Import os module for file path operations
+from pathlib import Path  # Import Path for modern file path handling
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
+BASE_DIR = Path(__file__).resolve().parent.parent  # Set BASE_DIR to the project's root directory
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-jh$8f)hpat&_jqa^83+2%9x7r&@mrxv5j8pq0a1f@v^mj_0m-0'
+SECRET_KEY = 'django-insecure-jh$8f)hpat&_jqa^83+2%9x7r&@mrxv5j8pq0a1f@v^mj_0m-0'  # Secret key for cryptographic signing (insecure for production)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = True  # Enable debug mode (should be False in production for security)
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['*']  # Allow all hosts (insecure for production; specify domains in production)
 
-SITE_ID = 1
+SITE_ID = 1  # Site ID for django.contrib.sites (used by allauth)
 
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'littlesandesh123@gmail.com'  # Your Gmail address
-EMAIL_HOST_PASSWORD = 'bgqs gftc wtob pjta'  # Your Gmail app password
+EMAIL_HOST = 'smtp.gmail.com'  # SMTP server host for sending emails (Gmail)
+EMAIL_PORT = 587  # SMTP port for TLS
+EMAIL_USE_TLS = True  # Use TLS for secure email transmission
+EMAIL_HOST_USER = 'littlesandesh123@gmail.com'  # Gmail address for sending emails
+EMAIL_HOST_PASSWORD = 'bgqs gftc wtob pjta'  # Gmail app-specific password (not a regular password)
+
 # Application definition
 
-INSTALLED_APPS = [
-    'daphne',  # ASGI Server
-    'channels',
-    'corsheaders',
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'django.contrib.sites',  # Keep this only once!
+# neo_share/settings.py
+RECAPTCHA_PUBLIC_KEY = '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI'  # Replace with your Site Key 
+RECAPTCHA_PRIVATE_KEY = '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe'  # Replace with your Secret Key
+
+INSTALLED_APPS = [  # List of installed Django apps
+    'daphne',  # ASGI server for handling WebSocket connections (replaces WSGI in Channels)
+    'channels',  # Django Channels for WebSocket and async support
+    'corsheaders',  # CORS headers for cross-origin requests
+    'django.contrib.admin',  # Django admin interface
+    'django.contrib.auth',  # Authentication framework
+    'django.contrib.contenttypes',  # Content types framework
+    'django.contrib.sessions',  # Session management
+    'django.contrib.messages',  # Messages framework for user feedback
+    'django.contrib.staticfiles',  # Static file handling
+    'django.contrib.sites',  # Sites framework (required by allauth)
 
     # Your custom app
-    'neo',  
+    'neo',  # Custom app containing models, views, etc.
+    #'captcha',  # Captcha support for forms
 
     # Allauth for authentication
-    'allauth',
-    'allauth.account',
-    'allauth.socialaccount',
-    'allauth.socialaccount.providers.google',
-    'social_django',
+    'allauth',  # Base allauth package for authentication
+    'allauth.account',  # Allauth account management
+    'allauth.socialaccount',  # Allauth social authentication
+    'allauth.socialaccount.providers.google',  # Google OAuth2 provider for allauth
+    'social_django',  # Social authentication library (python-social-auth)
 ]
 
+RECAPTCHA_TESTING = True  # Remove or set to False in production
+
 # ASGI Configuration
-ASGI_APPLICATION = 'neo_share.asgi.application' # Add this line to the end of the file
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+ASGI_APPLICATION = 'neo_share.asgi.application'  # Specify the ASGI application entry point (neo_share/asgi.py)
+CHANNEL_LAYERS = {  # Configuration for Channels layer (for WebSocket communication)
+    "default": {  # Default channel layer
+        "BACKEND": "channels_redis.core.RedisChannelLayer",  # Use Redis as the backend
+        "CONFIG": {  # Redis configuration
+            "hosts": [("127.0.0.1", 6379)],  # Redis server at localhost:6379
         },
     },
 }
 
-
 # Message settings
-from django.contrib.messages import constants as messages
-MESSAGE_TAGS = {
-    messages.DEBUG: 'alert-secondary',
-    messages.INFO: 'alert-info',
-    messages.SUCCESS: 'alert-success',
-    messages.WARNING: 'alert-warning',
-    messages.ERROR: 'alert-danger',
+from django.contrib.messages import constants as messages  # Import message constants
+MESSAGE_TAGS = {  # Map message levels to Bootstrap alert classes
+    messages.DEBUG: 'alert-secondary',  # Debug messages
+    messages.INFO: 'alert-info',  # Info messages
+    messages.SUCCESS: 'alert-success',  # Success messages
+    messages.WARNING: 'alert-warning',  # Warning messages
+    messages.ERROR: 'alert-danger',  # Error messages
 }
 
 # neo_share/settings.py
-SESSION_COOKIE_AGE = 300  # 5 minutes session timeout
-SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Expire session when browser closes
-SESSION_SAVE_EVERY_REQUEST = True  # Update session on every request
-SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_AGE = 300  # Session timeout after 5 minutes (300 seconds)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Expire session when browser closes (overwritten below)
+SESSION_SAVE_EVERY_REQUEST = True  # Update session on every request (keeps session alive)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Expire session when browser closes (repeated setting)
 
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'allauth.account.middleware.AccountMiddleware',
-    'social_django.middleware.SocialAuthExceptionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
-    'neo.middleware.LoginRequiredMiddleware',  # Add custom middleware
-
+MIDDLEWARE = [  # List of middleware classes
+    'django.middleware.security.SecurityMiddleware',  # Security enhancements
+    'django.contrib.sessions.middleware.SessionMiddleware',  # Session management
+    'django.middleware.common.CommonMiddleware',  # Common utilities (e.g., URL normalization)
+    'django.middleware.csrf.CsrfViewMiddleware',  # CSRF protection
+    'django.contrib.auth.middleware.AuthenticationMiddleware',  # Authentication support
+    'django.contrib.messages.middleware.MessageMiddleware',  # Messages framework support
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',  # Clickjacking protection
+    'allauth.account.middleware.AccountMiddleware',  # Allauth account middleware
+    'social_django.middleware.SocialAuthExceptionMiddleware',  # Handle social auth exceptions
+    'corsheaders.middleware.CorsMiddleware',  # CORS support
+    'neo.middleware.LoginRequiredMiddleware',  # Custom middleware for login enforcement
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",  # Adjust this to your frontend URL
+CORS_ALLOWED_ORIGINS = [  # List of allowed origins for CORS (overridden below)
+    "http://localhost:8080",  # Allow requests from localhost:8080
 ]
 
 # If you're testing locally, you might want to allow all origins during development
-CORS_ALLOW_ALL_ORIGINS = True  # Only use this in development!
+CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins (insecure for production; overrides CORS_ALLOWED_ORIGINS)
 
 # For production, specify allowed origins
 # CORS_ALLOWED_ORIGINS = [
@@ -116,140 +121,133 @@ CORS_ALLOW_ALL_ORIGINS = True  # Only use this in development!
 #     # Add your production domain here
 # ]
 
-ROOT_URLCONF = 'neo_share.urls'
+ROOT_URLCONF = 'neo_share.urls'  # Root URL configuration file
 
-TEMPLATES = [
+TEMPLATES = [  # Template configuration
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'neo' / 'templates'], # Add this line to the TEMPLATES list
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-                'social_django.context_processors.backends',
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',  # Use Django template engine
+        'DIRS': [BASE_DIR / 'neo' / 'templates'],  # Add neo/templates directory for custom templates
+        'APP_DIRS': True,  # Look for templates in app directories
+        'OPTIONS': {  # Template options
+            'context_processors': [  # List of context processors
+                'django.template.context_processors.debug',  # Add debug info to templates
+                'django.template.context_processors.request',  # Add request object to templates
+                'django.contrib.auth.context_processors.auth',  # Add auth info to templates
+                'django.contrib.messages.context_processors.messages',  # Add messages to templates
+                'social_django.context_processors.backends',  # Add social auth backends to templates
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'neo_share.wsgi.application'
-
+WSGI_APPLICATION = 'neo_share.wsgi.application'  # WSGI application entry point (for HTTP)
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'users',
-        'USER': 'postgres',
-        'PASSWORD': '12345',
-        'Port': '5432',
-        'HOST': 'localhost',
+DATABASES = {  # Database configuration
+    'default': {  # Default database
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',  # Use PostgreSQL with psycopg2
+        'NAME': 'users',  # Database name
+        'USER': 'postgres',  # Database user
+        'PASSWORD': '12345',  # Database password (insecure for production)
+        'Port': '5432',  # Database port (should be 'PORT' in uppercase)
+        'HOST': 'localhost',  # Database host
     }
 }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
-AUTH_PASSWORD_VALIDATORS = [
+AUTH_PASSWORD_VALIDATORS = [  # List of password validators
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',  # Prevent similar passwords
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',  # Enforce minimum length
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',  # Prevent common passwords
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',  # Prevent all-numeric passwords
     },
 ]
-
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
-
-USE_I18N = True
-
-USE_TZ = True
-
+LANGUAGE_CODE = 'en-us'  # Default language code
+TIME_ZONE = 'UTC'  # Default time zone
+USE_I18N = True  # Enable internationalization
+USE_TZ = True  # Enable timezone support
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
-
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'neo', 'static'),
+STATIC_URL = 'static/'  # URL prefix for static files
+STATICFILES_DIRS = [  # Additional directories for static files
+    os.path.join(BASE_DIR, 'neo', 'static'),  # neo/static directory
 ]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'  # Use BigAutoField for primary keys
 
-AUTHENTICATION_BACKENDS = (
-    'social_core.backends.google.GoogleOAuth2',
-    'django.contrib.auth.backends.ModelBackend',
+AUTHENTICATION_BACKENDS = (  # List of authentication backends
+    'social_core.backends.google.GoogleOAuth2',  # Google OAuth2 backend
+    'django.contrib.auth.backends.ModelBackend',  # Default Django auth backend
 )
 
 # Remove or comment out this line if you have it
-# SOCIAL_AUTH_GOOGLE_OAUTH2_REDIRECT_URI = '...'
+# SOCIAL_AUTH_GOOGLE_OAUTH2_REDIRECT_URI = '...'  # Commented out redirect URI
 
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '232867158604-jk128d2ubej5lvn7299fhbd5mqo6nhse.apps.googleusercontent.com'
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = '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'
-SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email', 'profile', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
-SOCIAL_AUTH_URL_NAMESPACE = 'social'
-SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/userinfo.profile',
-    'openid'
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '232867158604-jk128d2ubej5lvn7299fhbd5mqo6nhse.apps.googleusercontent.com'  # Google OAuth2 client ID
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = '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'  # Google OAuth2 client secret
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email', 'profile', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']  # OAuth2 scopes (overwritten below)
+SOCIAL_AUTH_URL_NAMESPACE = 'social'  # Namespace for social auth URLs
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [  # Redefine Google OAuth2 scopes
+    'https://www.googleapis.com/auth/userinfo.email',  # Access email info
+    'https://www.googleapis.com/auth/userinfo.profile',  # Access profile info
+    'openid'  # OpenID Connect scope
 ]
 
-SOCIAL_AUTH_URL_NAMESPACE = 'social'
-SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/room/'
-SOCIAL_AUTH_LOGIN_ERROR_URL = '/login/'
+SOCIAL_AUTH_URL_NAMESPACE = 'social'  # Repeated namespace definition
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/room/'  # Redirect URL after successful login
+SOCIAL_AUTH_LOGIN_ERROR_URL = '/login/'  # Redirect URL on login error
 
-SOCIAL_AUTH_PIPELINE = (
-    'social_core.pipeline.social_auth.social_details',
-    'social_core.pipeline.social_auth.social_uid',
-    'social_core.pipeline.social_auth.auth_allowed',
-    'neo.views.handle_google_login',  # Custom handler
-    'social_core.pipeline.user.get_username',
-    'social_core.pipeline.user.create_user',
-    'social_core.pipeline.social_auth.associate_user',
-    'social_core.pipeline.social_auth.load_extra_data',
-    'social_core.pipeline.user.user_details',
+SOCIAL_AUTH_PIPELINE = (  # Social auth pipeline for processing login
+    'social_core.pipeline.social_auth.social_details',  # Extract social details
+    'social_core.pipeline.social_auth.social_uid',  # Get social UID
+    'social_core.pipeline.social_auth.auth_allowed',  # Check if auth is allowed
+    'neo.views.handle_google_login',  # Custom handler for Google login
+    'social_core.pipeline.user.get_username',  # Generate username
+    'social_core.pipeline.user.create_user',  # Create user if needed
+    'social_core.pipeline.social_auth.associate_user',  # Associate user with social account
+    'social_core.pipeline.social_auth.load_extra_data',  # Load extra social data
+    'social_core.pipeline.user.user_details',  # Update user details
 )
 
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
+LOGGING = {  # Logging configuration
+    'version': 1,  # Logging config version
+    'disable_existing_loggers': False,  # Keep existing loggers active
+    'handlers': {  # Define log handlers
+        'console': {  # Console handler
+            'class': 'logging.StreamHandler',  # Output logs to console
         },
     },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
+    'root': {  # Root logger configuration
+        'handlers': ['console'],  # Use console handler
+        'level': 'INFO',  # Log INFO level and above
     },
 }
 
-ACCOUNT_ADAPTER = "allauth.account.adapter.DefaultAccountAdapter"
-SOCIALACCOUNT_ADAPTER = "allauth.socialaccount.adapter.DefaultSocialAccountAdapter"
-SOCIALACCOUNT_PROVIDERS = {
-    "google": {
-        "SCOPE": ["profile", "email"],
-        "AUTH_PARAMS": {"access_type": "online"},
+ACCOUNT_ADAPTER = "allauth.account.adapter.DefaultAccountAdapter"  # Default account adapter for allauth
+SOCIALACCOUNT_ADAPTER = "allauth.socialaccount.adapter.DefaultSocialAccountAdapter"  # Default social account adapter
+SOCIALACCOUNT_PROVIDERS = {  # Configuration for social providers
+    "google": {  # Google provider settings
+        "SCOPE": ["profile", "email"],  # Scopes for Google auth
+        "AUTH_PARAMS": {"access_type": "online"},  # Online access type
     }
 }

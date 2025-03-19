@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 import json
+from django.conf import settings
 import logging
 import random
 import asyncio
@@ -43,7 +44,6 @@ async def get_room(code):
     return await dht_server.get(code)
 
 async def store_room(code, admin_username):
-    """Store room information in DHT."""
     try:
         dht_manager = await DHTManager.get_instance()
         success = await dht_manager.store_room(code, admin_username)
@@ -55,7 +55,6 @@ async def store_room(code, admin_username):
         return False
 
 async def get_room_from_dht(code):
-    """Retrieve room information from DHT."""
     try:
         dht_manager = await DHTManager.get_instance()
         return await dht_manager.get_room(code)
@@ -67,8 +66,28 @@ def generate_room_code(length=6):
     return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=length))
 
 # Authentication Views
+
 def signup(request):
     if request.method == 'POST':
+        # Validate reCAPTCHA
+        recaptcha_response = request.POST.get('g-recaptcha-response')
+        if not recaptcha_response:
+            return JsonResponse({'error': 'Please complete the reCAPTCHA'}, status=400)
+
+        import requests
+        response = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={
+                'secret': settings.RECAPTCHA_PRIVATE_KEY,
+                'response': recaptcha_response,
+                'remoteip': request.META.get('REMOTE_ADDR')
+            }
+        )
+        result = response.json()
+        if not result.get('success'):
+            return JsonResponse({'error': 'reCAPTCHA verification failed'}, status=400)
+
+        # Proceed with signup logic
         username = request.POST.get('username')
         email = request.POST.get('email')
         password = request.POST.get('password')
@@ -142,6 +161,32 @@ def verify_otp(request):
 
 def login_view(request):
     if request.method == "POST":
+        # Validate reCAPTCHA
+        recaptcha_response = request.POST.get('g-recaptcha-response')
+        if not recaptcha_response:
+            messages.error(request, "Please complete the reCAPTCHA.")
+            return render(request, 'login.html', {
+                'RECAPTCHA_PUBLIC_KEY': settings.RECAPTCHA_PUBLIC_KEY
+            })
+
+        # Verify reCAPTCHA with Google
+        import requests
+        response = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={
+                'secret': settings.RECAPTCHA_PRIVATE_KEY,
+                'response': recaptcha_response,
+                'remoteip': request.META.get('REMOTE_ADDR')
+            }
+        )
+        result = response.json()
+        if not result.get('success'):
+            messages.error(request, "reCAPTCHA verification failed. Please try again.")
+            return render(request, 'login.html', {
+                'RECAPTCHA_PUBLIC_KEY': settings.RECAPTCHA_PUBLIC_KEY
+            })
+
+        # Proceed with login logic
         email = request.POST.get("email")
         password = request.POST.get("password")
         
@@ -160,12 +205,11 @@ def login_view(request):
         except User.DoesNotExist:
             messages.error(request, "Invalid email or password")
     
-    # Handle social auth errors
+    # Handle social auth errors and force logout logic
     error = request.GET.get('error')
     if error:
         messages.error(request, "Authentication failed. Please try again.")
     
-    # Force logout if accessing /login/ via GET, even if authenticated
     if request.user.is_authenticated:
         user_profile = UserProfile.objects.get(user=request.user)
         user_profile.is_online = False
@@ -175,7 +219,43 @@ def login_view(request):
         request.session.flush()
         messages.info(request, "Please log in again.")
     
-    return render(request, 'login.html')
+    return render(request, 'login.html', {
+        'RECAPTCHA_PUBLIC_KEY': settings.RECAPTCHA_PUBLIC_KEY
+    })
+
+# New view to handle Google login with reCAPTCHA verification
+def google_login_with_recaptcha(request):
+    if request.method == "POST":
+        # Validate reCAPTCHA
+        recaptcha_response = request.POST.get('g-recaptcha-response')
+        if not recaptcha_response:
+            messages.error(request, "Please complete the reCAPTCHA for Google login.")
+            return render(request, 'login.html', {
+                'RECAPTCHA_PUBLIC_KEY': settings.RECAPTCHA_PUBLIC_KEY
+            })
+
+        # Verify reCAPTCHA with Google
+        import requests
+        response = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={
+                'secret': settings.RECAPTCHA_PRIVATE_KEY,
+                'response': recaptcha_response,
+                'remoteip': request.META.get('REMOTE_ADDR')
+            }
+        )
+        result = response.json()
+        if not result.get('success'):
+            messages.error(request, "reCAPTCHA verification failed for Google login. Please try again.")
+            return render(request, 'login.html', {
+                'RECAPTCHA_PUBLIC_KEY': settings.RECAPTCHA_PUBLIC_KEY
+            })
+
+        # If reCAPTCHA is verified, redirect to Google OAuth2 flow
+        return redirect('social:begin', backend='google-oauth2')
+
+    # If not a POST request, redirect back to login page
+    return redirect('login')
 
 def handle_auth_error(request):
     messages.error(request, "Authentication failed. Please try again.")
@@ -222,17 +302,16 @@ def handle_google_login(backend, user, response, *args, **kwargs):
     profile.google_name = name
     profile.is_online = True
     profile.last_seen = timezone.now()
-    profile.room_code = None  # Ensure no automatic room assignment
+    profile.room_code = None
     profile.save()
     
-    # Flush existing session to ensure fresh start
     request.session.flush()
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-    request.session['last_activity'] = timezone.now().timestamp()  # Set fresh activity timestamp
+    request.session['last_activity'] = timezone.now().timestamp()
     logger.info(f"User profile updated for {user.username} with Google name {name}")
 
     if not profile.room_code:
-        return redirect('room')  # Redirect to room to create/join
+        return redirect('room')
     return redirect('dashboard')
 
 def password_reset_request(request):
@@ -308,6 +387,7 @@ def room_view(request):
         'username': user_profile.google_name or request.user.username
     }
     return render(request, "room.html", context)
+
 @login_required(login_url='login')
 @require_http_methods(["POST"])
 def create_room(request):
@@ -365,7 +445,7 @@ def join_room(request):
         user_profile.is_online = True
         user_profile.save()
 
-        request.session['room_code'] = room_code  # Store in session
+        request.session['room_code'] = room_code
         logger.info(f"User {user.username} joined room {room_code}. Online users: {[u.username for u in room.users.all()]}")
 
         channel_layer = get_channel_layer()
@@ -417,7 +497,6 @@ def dashboard_view(request):
     }
     return render(request, 'dashboard.html', context)
 
-# neo/views.py (partial excerpt for logout_view)
 @login_required(login_url='login')
 @require_http_methods(["POST"])
 def logout_view(request):
@@ -436,12 +515,10 @@ def logout_view(request):
                 }
             )
         
-        # Update profile before flushing session
         user_profile.is_online = False
         user_profile.room_code = None
         user_profile.save()
         
-        # Log out and flush session
         logout(request)
         request.session.flush()
         
@@ -452,7 +529,6 @@ def logout_view(request):
 
 @login_required(login_url='login')
 def leave_room(request):
-    """Leave the current room."""
     if request.method == "POST":
         try:
             user_profile = UserProfile.objects.get(user=request.user)
@@ -462,12 +538,10 @@ def leave_room(request):
                 room = Room.objects.get(code=room_code)
                 room.users.remove(request.user)
                 
-                # Clear room code from profile
                 user_profile.room_code = None
                 user_profile.is_online = False
                 user_profile.save()
                 
-                # Clear session
                 request.session.pop('room_code', None)
                 
                 return JsonResponse({
@@ -494,7 +568,6 @@ def mark_notification_read(request, notification_id):
 
 @login_required(login_url='login')
 def room_detail(request, room_code):
-    """Display detailed room information."""
     try:
         room = Room.objects.filter(code=room_code).first()
         if not room:

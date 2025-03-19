@@ -170,6 +170,10 @@
                 <label for="confirm-password">Confirm Password:</label>
                 <input type="password" id="confirm-password" name="confirm-password" required>
             </div>
+            <!-- Add reCAPTCHA widget -->
+            <div class="mb-3">
+                <div class="g-recaptcha" data-sitekey="{{ RECAPTCHA_PUBLIC_KEY }}"></div>
+            </div>
             <button type="submit" class="button">Signup</button>
         </form>
         <div class="login">

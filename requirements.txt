@@ -1,0 +1,10 @@
+django-recaptcha==4.0.0
+daphne==4.1.2
+channels==4.2.0
+channels_redis==4.2.1
+django-cors-headers==4.4.0
+django-recaptcha==4.0.0
+django-allauth==0.63.6
+social-auth-app-django==5.4.3
+psycopg2-binary==2.9.10
+git+https://github.com/bmuller/kademlia.git
