@@ -365,20 +365,33 @@
                     const decryptedData = await decryptFile(encryptedData, key, iv);
                     const fileBlob = new Blob([decryptedData]);
                     showNotification("Scanning file for safety...", "info");
-                    const isMalicious = await scanFileWithVirusTotal(fileBlob);
-                    if (isMalicious) {
-                        showNotification(`Malicious file detected: ${fileMetadata[senderId].fileName}. Download aborted.`, "danger");
-                    } else {
-                        const url = URL.createObjectURL(fileBlob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = fileMetadata[senderId].fileName;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        showNotification(`File ${fileMetadata[senderId].fileName} downloaded`, "success");
+                    const formData = new FormData();
+                    formData.append('file', new File([fileBlob], fileMetadata[senderId].fileName));
+                    const scanResponse = await fetch('/scan-file/', {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': getCSRFToken()
+                        }
+                    });
+
+                    const scanResult = await scanResponse.json();
+                    
+                    if (!scanResponse.ok || !scanResult.safe) {
+                        showNotification(`Malicious file detected: ${fileMetadata[senderId].fileName}. Download aborted.`, "error");
+                        return;
                     }
+
+                    // If file is safe, proceed with download
+                    const downloadUrl = URL.createObjectURL(fileBlob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = fileMetadata[senderId].fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadUrl);
+                    showNotification("File downloaded successfully!", "success");
                 } catch (error) {
                     console.error(`[FileTransfer] Error processing file from ${senderId}:`, error);
                     showNotification("Failed to process file", "error");
@@ -481,65 +494,40 @@
             await sendFile(targetId, file); // Send the file
         }
 
-        // Add your VirusTotal API key here
-        const VIRUSTOTAL_API_KEY = "a73138cc3619fccf2971c614603d26897a6af46d868f2fbe4b693cf1f6040d54";
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            initiateFileTransfer(file);
+        }
 
-        async function scanFileWithVirusTotal(fileBlob) {
+        async function scanFileWithMetaDefender(fileBlob) {
             try {
                 const formData = new FormData();
-                formData.append("file", fileBlob);
+                formData.append('file', fileBlob);
                 
-                console.log("[VirusTotal] Uploading file for scanning...");
-                const response = await fetch("https://www.virustotal.com/api/v3/files", {
-                    method: "POST",
-                    headers: { "x-apikey": VIRUSTOTAL_API_KEY },
-                    body: formData
+                console.log("[MetaDefender] Uploading file for scanning...");
+                const response = await fetch('/scan-file/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': getCSRFToken()
+                    }
                 });
 
                 if (!response.ok) {
                     const error = await response.json();
-                    console.error("[VirusTotal] Upload error:", error);
+                    console.error("[MetaDefender] Upload error:", error);
                     throw new Error(`Upload failed: ${error.message || 'Unknown error'}`);
                 }
 
                 const result = await response.json();
-                const analysisId = result.data.id;
-                console.log("[VirusTotal] File uploaded, analysis ID:", analysisId);
-
-                let analysisResult;
-                // Increase retries to 15 times (30 seconds total)
-                for (let i = 0; i < 15; i++) {
-                    console.log(`[VirusTotal] Checking analysis status (attempt ${i + 1}/15)...`);
-                    const analysisResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${analysisId}`, {
-                        headers: { "x-apikey": VIRUSTOTAL_API_KEY }
-                    });
-
-                    if (!analysisResponse.ok) {
-                        const error = await analysisResponse.json();
-                        console.error("[VirusTotal] Analysis check error:", error);
-                        continue;
-                    }
-
-                    analysisResult = await analysisResponse.json();
-                    if (analysisResult.data.attributes.status === "completed") {
-                        const stats = analysisResult.data.attributes.stats;
-                        console.log("[VirusTotal] Analysis completed. Results:", stats);
-                        return stats.malicious > 0;
-                    }
-                    // Wait 2 seconds between checks
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-                
-                console.warn(`[VirusTotal] Analysis ${analysisId} did not complete within timeout`);
-                throw new Error("Scan timeout");
+                return !result.safe;
             } catch (error) {
-                console.error("[VirusTotal] Scan error:", error);
+                console.error("[MetaDefender] Scan error:", error);
                 showNotification("Error scanning file: " + error.message, "error");
                 throw error;
             }
         }
-
-        
 
         // Modify sendFileTransferRequest to enforce limits
         function sendFileTransferRequest(targetId) {
@@ -707,6 +695,7 @@
             dialog.dataset.targetUserId = userId; // Store target user ID
             dialog.style.display = 'block'; // Show dialog
             document.getElementById('file-input').value = ''; // Clear file input
+            document.getElementById('file-input').addEventListener('change', handleFileSelect);
         }
 
         // Initialization 

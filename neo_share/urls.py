@@ -74,4 +74,7 @@ urlpatterns = [  # List of URL patterns
 
     path('google-login/', views.google_login_with_recaptcha, name='google_login_with_recaptcha'),  # URL for Google login with reCAPTCHA
     # Routes to google_login_with_recaptcha, named 'google_login_with_recaptcha' for reverse URL resolution
+
+    path('scan-file/', views.scan_file, name='scan_file'),  # URL for file scanning endpoint
+    # Routes to scan_file view, named 'scan_file' for reverse URL resolution
 ]

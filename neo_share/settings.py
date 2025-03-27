@@ -239,7 +239,7 @@ LOGGING = {  # Logging configuration
     },
     'root': {  # Root logger configuration
         'handlers': ['console'],  # Use console handler
-        'level': 'INFO',  # Log INFO level and above
+        'level': 'DEBUG',  # Log DEBUG level and above
     },
 }
 
@@ -251,3 +251,6 @@ SOCIALACCOUNT_PROVIDERS = {  # Configuration for social providers
         "AUTH_PARAMS": {"access_type": "online"},  # Online access type
     }
 }
+
+# MetaDefender Cloud API Key
+METADEFENDER_API_KEY = "df1a3063c93f86f422315e07a18ef559"  # Add your API key here

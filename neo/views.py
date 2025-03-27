@@ -24,6 +24,7 @@ from django.urls import reverse
 from django.contrib.sites.shortcuts import get_current_site
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from .utils import scan_file_metadefender
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -586,3 +587,29 @@ def room_detail(request, room_code):
     except Exception as e:
         logger.error(f"Error in room_detail view: {e}")
         return redirect('room')
+
+@login_required(login_url='login')
+@require_http_methods(["POST"])
+def scan_file(request):
+    """Endpoint to scan a file before transfer"""
+    try:
+        file = request.FILES.get('file')
+        if not file:
+            return JsonResponse({"error": "No file provided"}, status=400)
+            
+        # Read file content
+        file_content = file.read()
+        
+        # Scan file
+        is_safe, message = scan_file_metadefender(file_content, file.name)
+        
+        return JsonResponse({
+            "safe": is_safe,
+            "message": message
+        })
+    except Exception as e:
+        logger.error(f"Error scanning file: {e}")
+        return JsonResponse({
+            "error": "Failed to scan file",
+            "message": str(e)
+        }, status=500)
