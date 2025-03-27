@@ -485,28 +485,58 @@
         const VIRUSTOTAL_API_KEY = "a73138cc3619fccf2971c614603d26897a6af46d868f2fbe4b693cf1f6040d54";
 
         async function scanFileWithVirusTotal(fileBlob) {
-            const formData = new FormData();
-            formData.append("file", fileBlob);
-            const response = await fetch("https://www.virustotal.com/api/v3/files", {
-                method: "POST",
-                headers: { "x-apikey": VIRUSTOTAL_API_KEY },
-                body: formData
-            });
-            const result = await response.json();
-            const analysisId = result.data.id;
-            let analysisResult;
-            for (let i = 0; i < 5; i++) {
-                const analysisResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${analysisId}`, {
-                    headers: { "x-apikey": VIRUSTOTAL_API_KEY }
+            try {
+                const formData = new FormData();
+                formData.append("file", fileBlob);
+                
+                console.log("[VirusTotal] Uploading file for scanning...");
+                const response = await fetch("https://www.virustotal.com/api/v3/files", {
+                    method: "POST",
+                    headers: { "x-apikey": VIRUSTOTAL_API_KEY },
+                    body: formData
                 });
-                analysisResult = await analysisResponse.json();
-                if (analysisResult.data.attributes.status === "completed") {
-                    return analysisResult.data.attributes.stats.malicious > 0;
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    console.error("[VirusTotal] Upload error:", error);
+                    throw new Error(`Upload failed: ${error.message || 'Unknown error'}`);
                 }
-                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                const result = await response.json();
+                const analysisId = result.data.id;
+                console.log("[VirusTotal] File uploaded, analysis ID:", analysisId);
+
+                let analysisResult;
+                // Increase retries to 15 times (30 seconds total)
+                for (let i = 0; i < 15; i++) {
+                    console.log(`[VirusTotal] Checking analysis status (attempt ${i + 1}/15)...`);
+                    const analysisResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${analysisId}`, {
+                        headers: { "x-apikey": VIRUSTOTAL_API_KEY }
+                    });
+
+                    if (!analysisResponse.ok) {
+                        const error = await analysisResponse.json();
+                        console.error("[VirusTotal] Analysis check error:", error);
+                        continue;
+                    }
+
+                    analysisResult = await analysisResponse.json();
+                    if (analysisResult.data.attributes.status === "completed") {
+                        const stats = analysisResult.data.attributes.stats;
+                        console.log("[VirusTotal] Analysis completed. Results:", stats);
+                        return stats.malicious > 0;
+                    }
+                    // Wait 2 seconds between checks
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                
+                console.warn(`[VirusTotal] Analysis ${analysisId} did not complete within timeout`);
+                throw new Error("Scan timeout");
+            } catch (error) {
+                console.error("[VirusTotal] Scan error:", error);
+                showNotification("Error scanning file: " + error.message, "error");
+                throw error;
             }
-            console.warn(`[FileTransfer] VirusTotal analysis for ${analysisId} did not complete in time`);
-            return false; // Assume safe if scan doesn’t complete
         }
 
         
