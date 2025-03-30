@@ -1,0 +1,50 @@
+body {
+    font-family: 'Arial', sans-serif;
+    background: #f1f1f1;
+    min-height: 100vh;
+    padding: 20px;
+}
+.room-container {
+    max-width: 800px;
+    margin: 50px auto;
+    text-align: center;
+}
+.room-actions {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-top: 30px;
+}
+.action-button {
+    padding: 15px 30px;
+    font-size: 18px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: white;
+    transition: transform 0.2s;
+}
+.action-button:hover {
+    transform: translateY(-2px);
+}
+.modal-content {
+    border-radius: 12px;
+}
+.room-code {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 20px 0;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+.copy-button {
+    margin-left: 10px;
+    padding: 5px 15px;
+    border-radius: 4px;
+    background: #28a745;
+    color: white;
+    border: none;
+    cursor: pointer;
+}

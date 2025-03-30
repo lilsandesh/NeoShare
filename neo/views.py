@@ -15,6 +15,7 @@ from django.conf import settings
 import logging
 import random
 import asyncio
+import re
 from neo.dht_module import Server, DHTManager
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth.tokens import default_token_generator
@@ -66,28 +67,15 @@ async def get_room_from_dht(code):
 def generate_room_code(length=6):
     return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=length))
 
-# Authentication Views
 
+def is_strong_password(password):
+    """Check if the password meets the strength criteria."""
+    pattern = r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@#$%^&*()!])[A-Za-z\d@#$%^&*()!]{8,}$"
+    return bool(re.match(pattern, password))
+
+# Authentication Views
 def signup(request):
     if request.method == 'POST':
-        # Validate reCAPTCHA
-        recaptcha_response = request.POST.get('g-recaptcha-response')
-        if not recaptcha_response:
-            return JsonResponse({'error': 'Please complete the reCAPTCHA'}, status=400)
-
-        import requests
-        response = requests.post(
-            'https://www.google.com/recaptcha/api/siteverify',
-            data={
-                'secret': settings.RECAPTCHA_PRIVATE_KEY,
-                'response': recaptcha_response,
-                'remoteip': request.META.get('REMOTE_ADDR')
-            }
-        )
-        result = response.json()
-        if not result.get('success'):
-            return JsonResponse({'error': 'reCAPTCHA verification failed'}, status=400)
-
         # Proceed with signup logic
         username = request.POST.get('username')
         email = request.POST.get('email')
@@ -99,12 +87,22 @@ def signup(request):
 
         if password != confirm_password:
             return JsonResponse({'error': 'Passwords do not match'}, status=400)
+        
+        #Check password strength
+        if not is_strong_password(password):
+            return JsonResponse({'error': 'Password must be at least 8 characters long and include an uppercase letter, a lowercase letter, a number, and a special character.'}, status=400)
 
         if User.objects.filter(username=username).exists():
             return JsonResponse({'error': 'Username already taken'}, status=400)
 
         if User.objects.filter(email=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
+
+        # Create user with hashed password
+        user = User.objects.create_user(username=username, email=email)
+        user.set_password(password)  # This automatically hashes the password
+        user.is_active = False  # User will be activated after OTP verification
+        user.save()
 
         otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
         OTP.objects.filter(email=email).delete()
@@ -145,11 +143,8 @@ def verify_otp(request):
 
         signup_data = request.session.get("signup_data")
         if signup_data:
-            user = User.objects.create_user(
-                username=signup_data["username"],
-                email=signup_data["email"],
-                password=signup_data["password"]
-            )
+            user = User.objects.get(email=signup_data["email"])
+            user.is_active = True
             user.save()
             del request.session["signup_data"]
             return JsonResponse({"status": "success", "message": "Signup successful", "redirect_url": "/login/"})

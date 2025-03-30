@@ -1,0 +1,90 @@
+/* Dashboard.css */
+/* This CSS file styles the dashboard layout and components for a web application. */
+body { /* Styles the body element */
+    min-height: 100vh; /* Ensures the body takes up at least the full viewport height */
+    display: flex; /* Uses flexbox for layout */
+    flex-direction: column; /* Arranges children vertically */
+    background-color: #f8f9fa; /* Sets a light gray background */
+}
+.header { /* Styles the header section */
+    background-color: #2c3e50; /* Dark blue background */
+    padding: 1rem; /* Adds padding around content */
+    position: relative; /* Allows absolute positioning of children */
+}
+.header img { /* Styles the logo image in the header */
+    height: 60px; /* Fixed height for the logo */
+    position: absolute; /* Positions it relative to the header */
+    left: 1rem; /* Aligns it 1rem from the left */
+    top: 50%; /* Centers it vertically */
+    transform: translateY(-50%); /* Adjusts vertical centering */
+}
+.header h1 { /* Styles the header title */
+    color: white; /* White text color */
+    text-align: center; /* Centers the text */
+    margin: 0; /* Removes default margins */
+}
+.content { /* Styles the main content area */
+    flex: 1; /* Allows it to grow and fill available space */
+    display: flex; /* Uses flexbox for horizontal layout */
+}
+.sidebar, .notifications-panel { /* Styles both sidebar and notifications panel */
+    width: 300px; /* Fixed width */
+    background-color: white; /* White background */
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
+    padding: 1.5rem; /* Inner padding */
+}
+.main-content { /* Styles the central content area */
+    flex: 1; /* Grows to fill remaining space */
+    padding: 1.5rem; /* Inner padding */
+    overflow-y: auto; /* Adds vertical scrolling if content overflows */
+}
+.user-card { /* Styles user cards */
+    transition: transform 0.2s; /* Smooth animation for hover effect */
+    height: 100%; /* Ensures full height of parent */
+}
+.user-card:hover { /* Hover effect for user cards */
+    transform: translateY(-5px); /* Moves card up slightly */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1); /* Adds shadow on hover */
+}
+.super-user-card { /* Styles superuser cards */
+    border: 2px solid #FFD700; /* Gold border */
+    background-color: #FFF8E1; /* Light gold background */
+}
+.guest-card { /* Styles guest user cards */
+    border: 2px solid #ccc; /* Gray border */
+}
+.file-transfer-dialog { /* Styles the file transfer dialog */
+    position: fixed; /* Fixed position on screen */
+    right: 20px; /* 20px from the right edge */
+    top: 20px; /* 20px from the top */
+    background: white; /* White background */
+    padding: 20px; /* Inner padding */
+    border-radius: 8px; /* Rounded corners */
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1); /* Shadow for depth */
+    z-index: 1000; /* Ensures it appears above other content */
+    display: none; /* Hidden by default */
+}
+.notification-item { /* Styles notification items */
+    transition: all 0.3s ease; /* Smooth transition for hover */
+    border-left: 4px solid #0d6efd; /* Blue left border */
+}
+.notification-item:hover { /* Hover effect for notifications */
+    transform: translateX(5px); /* Shifts right on hover */
+}
+.notification-item .card-body { /* Styles card body in notifications */
+    padding: 1rem; /* Inner padding */
+}
+.alert { /* Styles alert notifications */
+    margin-bottom: 0.5rem; /* Space below each alert */
+    animation: slideIn 0.3s ease-out; /* Slide-in animation */
+}
+@keyframes slideIn { /* Defines the slide-in animation */
+    from { /* Starting state */
+        opacity: 0; /* Invisible */
+        transform: translateX(20px); /* Shifted right */
+    }
+    to { /* Ending state */
+        opacity: 1; /* Fully visible */
+        transform: translateX(0); /* Normal position */
+    }
+}
