@@ -1,0 +1,1 @@
+This is my final year project. It is the p2p file sharing web based platform which was based on kademlia DHT and webRTC. I had used the google STURN server for nat transversal in the local development and to send the files locally. It needed TURN server in deployment in the cloud to transfer the files all over the world. 
